@@ -557,7 +557,7 @@ function OfferTableApp() {
           </p>
         </div>
         <div>
-          <button onClick={() => void handleRefreshClick()} type="button">
+          <button className="refresh-button" onClick={() => void handleRefreshClick()} type="button">
             Odśwież oferty
           </button>
         </div>
