@@ -37,3 +37,22 @@
     review_notes: tasks/review-inline-offer-editing.md
     security_report: tasks/security-inline-offer-editing.md
     event_log: logs/events.jsonl
+- task_id: ci-build-and-ghcr-publish
+  goal: Build the project on GitHub and publish the container image to ghcr.io with latest from main and semver tags from git releases.
+  depends_on: []
+  stack: typescript
+  owner_role: implementer
+  target_paths:
+    - .github/workflows/publish.yml
+    - tests/docs/github-actions-smoke.test.ts
+    - README.md
+    - tests/docs/readme-smoke.test.ts
+  definition_of_done: Pushes to main publish latest, pushes of vX.Y.Z tags publish semver tags, and the release model is covered by repo tests and documentation.
+  status: completed
+  artifacts:
+    spec: docs/superpowers/specs/2026-04-09-ci-build-and-ghcr-publish-design.md
+    plan: docs/superpowers/plans/2026-04-09-ci-build-and-ghcr-publish.md
+    test_report: tasks/test-report-ci-build-and-ghcr-publish.md
+    review_notes: tasks/review-ci-build-and-ghcr-publish.md
+    security_report: tasks/security-ci-build-and-ghcr-publish.md
+    event_log: logs/events.jsonl

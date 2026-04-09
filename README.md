@@ -131,6 +131,19 @@ Po starcie otwórz:
 http://localhost:3000
 ```
 
+## CI / publikacja obrazu
+
+Repo publikuje obraz kontenera do `ghcr.io` przez GitHub Actions.
+
+- push do `main` buduje projekt i publikuje tag `latest`
+- push taga git w formacie `vX.Y.Z` buduje projekt i publikuje tag obrazu `X.Y.Z`
+
+Workflow przed publikacją wykonuje:
+
+- `npm ci`
+- `npm test`
+- `npm run build`
+
 ## Import ofert
 
 Źródło danych:
