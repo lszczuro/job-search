@@ -9,7 +9,7 @@ Lokalny tracker ofert pracy AI/LLM z importem z publicznego MCP CzyJestEldorado,
 - widok webowy na `http://localhost:3000`
 - tabela ofert zbudowana na React + TanStack Table
 - sortowanie kolumn
-- filtrowanie po labelkach generowanych z notatek i priorytetu
+- filtry per-kolumna: tekstowe, datowe, wielokrotnego wyboru, zakresowe numeryczne
 - przełączanie widoczności kolumn
 - inline editing dla `status_aplikacji`, `priorytet` i `status_ogloszenia`
 - ręczne odświeżenie importu przez HTTP
@@ -176,7 +176,15 @@ Tabela wspiera:
 - znacznik `Ostatni update`
 - link w kolumnie `Stanowisko`
 - sortowanie po kliknięciu nagłówka
-- filtrowanie po labelkach
+- per-kolumnowe filtry w nagłówku tabeli:
+  - filtry tekstowe (`Stanowisko`, `Firma`, `Lokalizacja`) — dopasowanie podciągu
+  - filtry datowe (`Data dodania`, `Ostatnia weryfikacja`) — dokładny dzień
+  - filtry wielokrotnego wyboru (`Status aplikacji`, `Kontrakt`, `Priorytet`, `Status ogłoszenia`, `Tryb pracy`) — dropdown z checkboxami
+  - filtr labeli notatek (`Notatki`) — dropdown z checkboxami, wartości z notatek ofert
+  - filtry zakresu numerycznego (`Widełki od`, `Widełki do`) — pole min/max
+- filtry łączą się logicznym AND między kolumnami, OR wewnątrz jednej kolumny wielokrotnego wyboru
+- pasek aktywnych filtrów: liczba wyników, chipy z możliwością usunięcia, przycisk `Wyczyść wszystkie filtry`
+- filtrowanie notatek zastąpiło poprzedni globalny filtr labeli
 - ukrywanie i pokazywanie kolumn
 - inline edycję pól `status_aplikacji`, `priorytet` i `status_ogloszenia`
 - automatyczny zapis zmian przez `PATCH /offers/:id` bez przeładowania strony

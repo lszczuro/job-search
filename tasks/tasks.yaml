@@ -1,3 +1,21 @@
+- task_id: offers-table-column-filters
+  goal: Add per-column filtering to the offers table and replace the global label filter.
+  depends_on: []
+  stack: typescript
+  owner_role: implementer
+  target_paths:
+    - src/web/client/offers-app.tsx
+    - tests/web/offers-app.test.ts
+    - README.md
+  definition_of_done: User can combine per-column filters across the offers table, clear them without reload, and use the notes column instead of the old global label filter.
+  status: completed
+  artifacts:
+    spec: docs/superpowers/specs/2026-04-09-offers-table-column-filters-design.md
+    plan: docs/superpowers/plans/2026-04-09-offers-table-column-filters.md
+    test_report: tasks/test-report-offers-table-column-filters.md
+    review_notes: tasks/review-offers-table-column-filters.md
+    security_report: tasks/security-offers-table-column-filters.md
+    event_log: logs/events.jsonl
 - task_id: inline-offer-editing
   goal: Add inline editing for offer application status and notes in the offers UI.
   depends_on: []

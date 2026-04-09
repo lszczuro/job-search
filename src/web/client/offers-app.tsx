@@ -1,16 +1,28 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   flexRender,
   getCoreRowModel,
+  getFilteredRowModel,
   getSortedRowModel,
   useReactTable,
   type Column,
   type ColumnDef,
-  type VisibilityState,
-  type SortingState
+  type ColumnFiltersState,
+  type FilterFn,
+  type SortingState,
+  type VisibilityState
 } from "@tanstack/react-table";
-import { getOfferLabels, getOfferNoteLabels, type OfferListItem } from "../offer-view-model";
+import { getOfferNoteLabels, type OfferListItem } from "../offer-view-model";
+
+type MultiSelectFilterValue = string[];
+type NumericRangeFilterValue = { min?: string; max?: string };
+
+type OfferColumnFilterMeta = {
+  filterVariant?: "text" | "date" | "multi-select" | "note-select" | "number-range";
+  filterLabel?: string;
+  getOptions?: (offers: OfferListItem[]) => string[];
+};
 
 type EditableField = "statusAplikacji" | "priorytet" | "statusOgloszenia";
 
@@ -76,76 +88,180 @@ function formatRefreshTimestamp(value: string | null, timezone: string) {
   }).format(new Date(value));
 }
 
+function normalizeDate(value?: string | null) {
+  return value ? value.slice(0, 10) : "";
+}
+
+function buildUniqueOptions(values: Array<string | null | undefined>) {
+  return [...new Set(values.filter((v): v is string => Boolean(v)))].sort((a, b) => a.localeCompare(b));
+}
+
 function getColumnLabel(column: Column<OfferListItem>) {
   return typeof column.columnDef.header === "string" ? column.columnDef.header : column.id;
 }
 
 function getFieldValue(offer: OfferListItem, field: EditableField) {
-  if (field === "statusAplikacji") {
-    return offer.statusAplikacji ?? "";
-  }
-
-  if (field === "priorytet") {
-    return offer.priorytet ?? "";
-  }
-
+  if (field === "statusAplikacji") return offer.statusAplikacji ?? "";
+  if (field === "priorytet") return offer.priorytet ?? "";
   return offer.statusOgloszenia ?? "";
 }
 
 function mergeOptions(baseOptions: string[], offers: OfferListItem[], field: EditableField) {
-  return [...new Set([...baseOptions, ...offers.map((offer) => getFieldValue(offer, field)).filter(Boolean)])];
+  return [...new Set([...baseOptions, ...offers.map((o) => getFieldValue(o, field)).filter(Boolean)])];
+}
+
+const textIncludesFilter: FilterFn<OfferListItem> = (row, columnId, value) => {
+  const cellValue = String(row.getValue(columnId) ?? "").toLowerCase();
+  return cellValue.includes(String(value ?? "").toLowerCase());
+};
+
+const exactDateFilter: FilterFn<OfferListItem> = (row, columnId, value) => {
+  const cellValue = normalizeDate(String(row.getValue(columnId) ?? ""));
+  return !value ? true : cellValue === value;
+};
+
+const multiSelectFilter: FilterFn<OfferListItem> = (row, columnId, value: MultiSelectFilterValue) => {
+  if (!value?.length) return true;
+  return value.includes(String(row.getValue(columnId) ?? ""));
+};
+
+const notesFilter: FilterFn<OfferListItem> = (row, _columnId, value: MultiSelectFilterValue) => {
+  if (!value?.length) return true;
+  const labels = getOfferNoteLabels(row.original);
+  return value.some((item) => labels.includes(item));
+};
+
+const numberRangeFilter: FilterFn<OfferListItem> = (row, columnId, value: NumericRangeFilterValue) => {
+  const rawValue = row.getValue(columnId);
+  const num = typeof rawValue === "number" ? rawValue : Number(rawValue);
+  if (Number.isNaN(num)) return false;
+  if (value.min && num < Number(value.min)) return false;
+  if (value.max && num > Number(value.max)) return false;
+  return true;
+};
+
+function FilterDropdown({
+  column,
+  meta,
+  offers
+}: {
+  column: Column<OfferListItem, unknown>;
+  meta: OfferColumnFilterMeta;
+  offers: OfferListItem[];
+}) {
+  const [open, setOpen] = useState(false);
+  const selectedValues = (column.getFilterValue() as MultiSelectFilterValue | undefined) ?? [];
+  const options = meta.getOptions ? meta.getOptions(offers) : [];
+
+  const handleChange = (option: string, checked: boolean) => {
+    const next = checked ? [...selectedValues, option] : selectedValues.filter((v) => v !== option);
+    column.setFilterValue(next.length ? next : undefined);
+  };
+
+  return (
+    <div className="filter-dropdown">
+      <button
+        aria-expanded={open}
+        aria-label={meta.filterLabel}
+        onClick={() => setOpen((o) => !o)}
+        type="button"
+      >
+        {selectedValues.length > 0 ? `${selectedValues.length} wybrane` : "Wybierz"}
+      </button>
+      {open && (
+        <div className="filter-panel">
+          {options.map((option) => (
+            <label key={option}>
+              <input
+                checked={selectedValues.includes(option)}
+                onChange={(e) => handleChange(option, e.target.checked)}
+                type="checkbox"
+              />
+              {option}
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function renderColumnFilter(column: Column<OfferListItem, unknown>, offers: OfferListItem[]) {
+  const meta = column.columnDef.meta as OfferColumnFilterMeta | undefined;
+  if (!meta?.filterVariant) return null;
+
+  if (meta.filterVariant === "text") {
+    return (
+      <input
+        aria-label={meta.filterLabel}
+        className="filter-input"
+        onChange={(e) => column.setFilterValue(e.target.value || undefined)}
+        value={(column.getFilterValue() as string) ?? ""}
+      />
+    );
+  }
+
+  if (meta.filterVariant === "date") {
+    return (
+      <input
+        aria-label={meta.filterLabel}
+        className="filter-input"
+        onChange={(e) => column.setFilterValue(e.target.value || undefined)}
+        type="date"
+        value={(column.getFilterValue() as string) ?? ""}
+      />
+    );
+  }
+
+  if (meta.filterVariant === "number-range") {
+    const value = (column.getFilterValue() as NumericRangeFilterValue | undefined) ?? {};
+    return (
+      <div className="filter-range">
+        <input
+          aria-label={`${meta.filterLabel} min`}
+          className="filter-input"
+          onChange={(e) => column.setFilterValue({ ...value, min: e.target.value || undefined })}
+          placeholder="min"
+          type="number"
+          value={value.min ?? ""}
+        />
+        <input
+          aria-label={`${meta.filterLabel} max`}
+          className="filter-input"
+          onChange={(e) => column.setFilterValue({ ...value, max: e.target.value || undefined })}
+          placeholder="max"
+          type="number"
+          value={value.max ?? ""}
+        />
+      </div>
+    );
+  }
+
+  return <FilterDropdown column={column} meta={meta} offers={offers} />;
 }
 
 function OfferTableApp() {
   const [offers, setOffers] = useState<OfferListItem[]>(() => readInitialOffers());
   const [refreshMeta] = useState<RefreshMeta>(() => readRefreshMeta());
   const [sorting, setSorting] = useState<SortingState>([]);
-  const [activeLabels, setActiveLabels] = useState<string[]>([]);
+  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
   const [saveStates, setSaveStates] = useState<Partial<Record<number, Partial<Record<EditableField, SaveState>>>>>({});
 
-  const labels = useMemo(
-    () => [...new Set(offers.flatMap((offer) => getOfferLabels(offer)))].sort((a, b) => a.localeCompare(b)),
-    [offers]
-  );
-  const statusAplikacjiOptions = useMemo(
-    () => mergeOptions(STATUS_APLIKACJI_OPTIONS, offers, "statusAplikacji"),
-    [offers]
-  );
-  const priorytetOptions = useMemo(() => mergeOptions(PRIORYTET_OPTIONS, offers, "priorytet"), [offers]);
-  const statusOgloszeniaOptions = useMemo(
-    () => mergeOptions(STATUS_OGLOSZENIA_OPTIONS, offers, "statusOgloszenia"),
-    [offers]
-  );
-  const filteredOffers = useMemo(
-    () =>
-      offers.filter((offer) => {
-        if (activeLabels.length === 0) {
-          return true;
-        }
-
-        const offerLabels = getOfferLabels(offer);
-        return activeLabels.every((label) => offerLabels.includes(label));
-      }),
-    [activeLabels, offers]
-  );
+  const statusAplikacjiOptions = mergeOptions(STATUS_APLIKACJI_OPTIONS, offers, "statusAplikacji");
+  const priorytetOptions = mergeOptions(PRIORYTET_OPTIONS, offers, "priorytet");
+  const statusOgloszeniaOptions = mergeOptions(STATUS_OGLOSZENIA_OPTIONS, offers, "statusOgloszenia");
 
   const setFieldSaveState = (offerId: number, field: EditableField, state: SaveState) => {
     setSaveStates((current) => ({
       ...current,
-      [offerId]: {
-        ...current[offerId],
-        [field]: state
-      }
+      [offerId]: { ...current[offerId], [field]: state }
     }));
   };
 
   const saveOfferField = async (offer: OfferListItem, field: EditableField, value: string) => {
     const previousValue = getFieldValue(offer, field);
-
-    if (previousValue === value) {
-      return;
-    }
+    if (previousValue === value) return;
 
     const payload =
       field === "statusAplikacji"
@@ -154,24 +270,18 @@ function OfferTableApp() {
           ? { priorytet: value }
           : { status_ogloszenia: value };
 
-    setOffers((current) =>
-      current.map((item) => (item.id === offer.id ? { ...item, [field]: value } : item))
-    );
+    setOffers((current) => current.map((item) => (item.id === offer.id ? { ...item, [field]: value } : item)));
     setFieldSaveState(offer.id, field, { status: "saving", message: "Zapisywanie..." });
 
     try {
       const response = await fetch(`/offers/${offer.id}`, {
         method: "PATCH",
-        headers: {
-          "content-type": "application/json"
-        },
+        headers: { "content-type": "application/json" },
         body: JSON.stringify(payload)
       });
       const result = (await response.json().catch(() => null)) as { ok?: boolean } | null;
 
-      if (!response.ok || result?.ok === false) {
-        throw new Error("SAVE_FAILED");
-      }
+      if (!response.ok || result?.ok === false) throw new Error("SAVE_FAILED");
 
       setFieldSaveState(offer.id, field, { status: "success", message: "Zapisano" });
     } catch {
@@ -182,205 +292,235 @@ function OfferTableApp() {
     }
   };
 
-  const columns: Array<ColumnDef<OfferListItem>> = useMemo(
-    () => [
-      {
-        accessorKey: "stanowisko",
-        header: "Stanowisko",
-        cell: ({ row }) => (
-          <a href={row.original.url ?? "#"} rel="noreferrer" target="_blank">
-            {row.original.stanowisko}
-          </a>
-        )
-      },
-      {
-        accessorKey: "statusAplikacji",
-        header: "Status aplikacji",
-        cell: ({ row }) => {
-          const saveState = saveStates[row.original.id]?.statusAplikacji ?? { status: "idle" };
-
-          return (
-            <div className="inline-editor">
-              <label className="sr-only" htmlFor={`status-aplikacji-${row.original.id}`}>
-                Status aplikacji dla {row.original.stanowisko}
-              </label>
-              <select
-                className="edit-select"
-                disabled={saveState.status === "saving"}
-                id={`status-aplikacji-${row.original.id}`}
-                onChange={(event) => void saveOfferField(row.original, "statusAplikacji", event.target.value)}
-                value={row.original.statusAplikacji ?? ""}
+  const columns: Array<ColumnDef<OfferListItem>> = [
+    {
+      accessorKey: "stanowisko",
+      header: "Stanowisko",
+      filterFn: textIncludesFilter,
+      meta: { filterVariant: "text", filterLabel: "Filtr Stanowisko" } as OfferColumnFilterMeta,
+      cell: ({ row }) => (
+        <a href={row.original.url ?? "#"} rel="noreferrer" target="_blank">
+          {row.original.stanowisko}
+        </a>
+      )
+    },
+    {
+      accessorKey: "statusAplikacji",
+      header: "Status aplikacji",
+      filterFn: multiSelectFilter,
+      meta: {
+        filterVariant: "multi-select",
+        filterLabel: "Filtr Status aplikacji",
+        getOptions: () => statusAplikacjiOptions
+      } as OfferColumnFilterMeta,
+      cell: ({ row }) => {
+        const saveState = saveStates[row.original.id]?.statusAplikacji ?? { status: "idle" };
+        return (
+          <div className="inline-editor">
+            <label className="sr-only" htmlFor={`status-aplikacji-${row.original.id}`}>
+              Status aplikacji dla {row.original.stanowisko}
+            </label>
+            <select
+              className="edit-select"
+              disabled={saveState.status === "saving"}
+              id={`status-aplikacji-${row.original.id}`}
+              onChange={(e) => void saveOfferField(row.original, "statusAplikacji", e.target.value)}
+              value={row.original.statusAplikacji ?? ""}
+            >
+              {statusAplikacjiOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+            {(saveState.status === "saving" || saveState.status === "success" || saveState.status === "error") && (
+              <span
+                aria-live="polite"
+                className={saveState.status === "error" ? "save-feedback save-feedback-error" : "save-feedback"}
               >
-                {statusAplikacjiOptions.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-              {saveState.status === "saving" || saveState.status === "success" || saveState.status === "error" ? (
-                <span
-                  aria-live="polite"
-                  className={saveState.status === "error" ? "save-feedback save-feedback-error" : "save-feedback"}
-                >
-                  {saveState.message}
-                </span>
-              ) : null}
-            </div>
-          );
-        }
-      },
-      {
-        accessorKey: "dataDodania",
-        header: "Data dodania",
-        cell: ({ row }) => formatDate(row.original.dataDodania)
-      },
-      {
-        accessorKey: "firma",
-        header: "Firma"
-      },
-      {
-        accessorKey: "kontrakt",
-        header: "Kontrakt"
-      },
-      {
-        accessorKey: "lokalizacja",
-        header: "Lokalizacja"
-      },
-      {
-        id: "notatki",
-        header: "Notatki",
-        cell: ({ row }) => (
-          <div className="labels">
-            {getOfferNoteLabels(row.original).map((label) => {
-              const isActive = activeLabels.includes(label);
-
-              return (
-                <button
-                  className={isActive ? "chip chip-active" : "chip"}
-                  key={label}
-                  onClick={() =>
-                    setActiveLabels((current) =>
-                      isActive ? current.filter((item) => item !== label) : [...current, label]
-                    )
-                  }
-                  type="button"
-                >
-                  {label}
-                </button>
-              );
-            })}
+                {saveState.message}
+              </span>
+            )}
           </div>
-        ),
-        sortingFn: (left, right) =>
-          getOfferNoteLabels(left.original)
-            .join(",")
-            .localeCompare(getOfferNoteLabels(right.original).join(","))
-      },
-      {
-        accessorKey: "widełkiOd",
-        header: "Widełki od",
-        cell: ({ row }) => formatAmount(row.original.widełkiOd)
-      },
-      {
-        accessorKey: "widełkiDo",
-        header: "Widełki do",
-        cell: ({ row }) => formatAmount(row.original.widełkiDo)
-      },
-      {
-        accessorKey: "ostatniaWeryfikacja",
-        header: "Ostatnia weryfikacja",
-        cell: ({ row }) => formatDate(row.original.ostatniaWeryfikacja)
-      },
-      {
-        accessorKey: "priorytet",
-        header: "Priorytet",
-        cell: ({ row }) => {
-          const saveState = saveStates[row.original.id]?.priorytet ?? { status: "idle" };
-
-          return (
-            <div className="inline-editor">
-              <label className="sr-only" htmlFor={`priorytet-${row.original.id}`}>
-                Priorytet dla {row.original.stanowisko}
-              </label>
-              <select
-                className="edit-select"
-                disabled={saveState.status === "saving"}
-                id={`priorytet-${row.original.id}`}
-                onChange={(event) => void saveOfferField(row.original, "priorytet", event.target.value)}
-                value={row.original.priorytet ?? ""}
-              >
-                {priorytetOptions.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-              {saveState.status === "saving" || saveState.status === "success" || saveState.status === "error" ? (
-                <span
-                  aria-live="polite"
-                  className={saveState.status === "error" ? "save-feedback save-feedback-error" : "save-feedback"}
-                >
-                  {saveState.message}
-                </span>
-              ) : null}
-            </div>
-          );
-        }
-      },
-      {
-        accessorKey: "statusOgloszenia",
-        header: "Status ogłoszenia",
-        cell: ({ row }) => {
-          const saveState = saveStates[row.original.id]?.statusOgloszenia ?? { status: "idle" };
-
-          return (
-            <div className="inline-editor">
-              <label className="sr-only" htmlFor={`status-ogloszenia-${row.original.id}`}>
-                Status ogłoszenia dla {row.original.stanowisko}
-              </label>
-              <select
-                className="edit-select"
-                disabled={saveState.status === "saving"}
-                id={`status-ogloszenia-${row.original.id}`}
-                onChange={(event) => void saveOfferField(row.original, "statusOgloszenia", event.target.value)}
-                value={row.original.statusOgloszenia ?? ""}
-              >
-                {statusOgloszeniaOptions.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-              {saveState.status === "saving" || saveState.status === "success" || saveState.status === "error" ? (
-                <span
-                  aria-live="polite"
-                  className={saveState.status === "error" ? "save-feedback save-feedback-error" : "save-feedback"}
-                >
-                  {saveState.message}
-                </span>
-              ) : null}
-            </div>
-          );
-        }
-      },
-      {
-        accessorKey: "trybPracy",
-        header: "Tryb pracy"
+        );
       }
-    ],
-    [activeLabels, priorytetOptions, saveStates, statusAplikacjiOptions, statusOgloszeniaOptions]
-  );
+    },
+    {
+      accessorKey: "dataDodania",
+      header: "Data dodania",
+      filterFn: exactDateFilter,
+      meta: { filterVariant: "date", filterLabel: "Filtr Data dodania" } as OfferColumnFilterMeta,
+      cell: ({ row }) => formatDate(row.original.dataDodania)
+    },
+    {
+      accessorKey: "firma",
+      header: "Firma",
+      filterFn: textIncludesFilter,
+      meta: { filterVariant: "text", filterLabel: "Filtr Firma" } as OfferColumnFilterMeta
+    },
+    {
+      accessorKey: "kontrakt",
+      header: "Kontrakt",
+      filterFn: multiSelectFilter,
+      meta: {
+        filterVariant: "multi-select",
+        filterLabel: "Filtr Kontrakt",
+        getOptions: (allOffers) => buildUniqueOptions(allOffers.map((o) => o.kontrakt))
+      } as OfferColumnFilterMeta
+    },
+    {
+      accessorKey: "lokalizacja",
+      header: "Lokalizacja",
+      filterFn: textIncludesFilter,
+      meta: { filterVariant: "text", filterLabel: "Filtr Lokalizacja" } as OfferColumnFilterMeta
+    },
+    {
+      accessorKey: "notatki",
+      header: "Notatki",
+      filterFn: notesFilter,
+      meta: {
+        filterVariant: "note-select",
+        filterLabel: "Filtr Notatki",
+        getOptions: (allOffers) => buildUniqueOptions(allOffers.flatMap((o) => getOfferNoteLabels(o)))
+      } as OfferColumnFilterMeta,
+      cell: ({ row }) => (
+        <div className="labels">
+          {getOfferNoteLabels(row.original).map((label) => (
+            <span className="chip" key={label}>
+              {label}
+            </span>
+          ))}
+        </div>
+      ),
+      sortingFn: (left, right) =>
+        getOfferNoteLabels(left.original)
+          .join(",")
+          .localeCompare(getOfferNoteLabels(right.original).join(","))
+    },
+    {
+      accessorKey: "widełkiOd",
+      header: "Widełki od",
+      filterFn: numberRangeFilter,
+      meta: { filterVariant: "number-range", filterLabel: "Filtr Widełki od" } as OfferColumnFilterMeta,
+      cell: ({ row }) => formatAmount(row.original.widełkiOd)
+    },
+    {
+      accessorKey: "widełkiDo",
+      header: "Widełki do",
+      filterFn: numberRangeFilter,
+      meta: { filterVariant: "number-range", filterLabel: "Filtr Widełki do" } as OfferColumnFilterMeta,
+      cell: ({ row }) => formatAmount(row.original.widełkiDo)
+    },
+    {
+      accessorKey: "ostatniaWeryfikacja",
+      header: "Ostatnia weryfikacja",
+      filterFn: exactDateFilter,
+      meta: { filterVariant: "date", filterLabel: "Filtr Ostatnia weryfikacja" } as OfferColumnFilterMeta,
+      cell: ({ row }) => formatDate(row.original.ostatniaWeryfikacja)
+    },
+    {
+      accessorKey: "priorytet",
+      header: "Priorytet",
+      filterFn: multiSelectFilter,
+      meta: {
+        filterVariant: "multi-select",
+        filterLabel: "Filtr Priorytet",
+        getOptions: () => priorytetOptions
+      } as OfferColumnFilterMeta,
+      cell: ({ row }) => {
+        const saveState = saveStates[row.original.id]?.priorytet ?? { status: "idle" };
+        return (
+          <div className="inline-editor">
+            <label className="sr-only" htmlFor={`priorytet-${row.original.id}`}>
+              Priorytet dla {row.original.stanowisko}
+            </label>
+            <select
+              className="edit-select"
+              disabled={saveState.status === "saving"}
+              id={`priorytet-${row.original.id}`}
+              onChange={(e) => void saveOfferField(row.original, "priorytet", e.target.value)}
+              value={row.original.priorytet ?? ""}
+            >
+              {priorytetOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+            {(saveState.status === "saving" || saveState.status === "success" || saveState.status === "error") && (
+              <span
+                aria-live="polite"
+                className={saveState.status === "error" ? "save-feedback save-feedback-error" : "save-feedback"}
+              >
+                {saveState.message}
+              </span>
+            )}
+          </div>
+        );
+      }
+    },
+    {
+      accessorKey: "statusOgloszenia",
+      header: "Status ogłoszenia",
+      filterFn: multiSelectFilter,
+      meta: {
+        filterVariant: "multi-select",
+        filterLabel: "Filtr Status ogłoszenia",
+        getOptions: () => statusOgloszeniaOptions
+      } as OfferColumnFilterMeta,
+      cell: ({ row }) => {
+        const saveState = saveStates[row.original.id]?.statusOgloszenia ?? { status: "idle" };
+        return (
+          <div className="inline-editor">
+            <label className="sr-only" htmlFor={`status-ogloszenia-${row.original.id}`}>
+              Status ogłoszenia dla {row.original.stanowisko}
+            </label>
+            <select
+              className="edit-select"
+              disabled={saveState.status === "saving"}
+              id={`status-ogloszenia-${row.original.id}`}
+              onChange={(e) => void saveOfferField(row.original, "statusOgloszenia", e.target.value)}
+              value={row.original.statusOgloszenia ?? ""}
+            >
+              {statusOgloszeniaOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+            {(saveState.status === "saving" || saveState.status === "success" || saveState.status === "error") && (
+              <span
+                aria-live="polite"
+                className={saveState.status === "error" ? "save-feedback save-feedback-error" : "save-feedback"}
+              >
+                {saveState.message}
+              </span>
+            )}
+          </div>
+        );
+      }
+    },
+    {
+      accessorKey: "trybPracy",
+      header: "Tryb pracy",
+      filterFn: multiSelectFilter,
+      meta: {
+        filterVariant: "multi-select",
+        filterLabel: "Filtr Tryb pracy",
+        getOptions: (allOffers) => buildUniqueOptions(allOffers.map((o) => o.trybPracy))
+      } as OfferColumnFilterMeta
+    }
+  ];
 
   const table = useReactTable({
-    data: filteredOffers,
+    data: offers,
     columns,
-    state: {
-      sorting,
-      columnVisibility
-    },
+    state: { sorting, columnVisibility, columnFilters },
     onSortingChange: setSorting,
     onColumnVisibilityChange: setColumnVisibility,
+    onColumnFiltersChange: setColumnFilters,
     getCoreRowModel: getCoreRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
     getSortedRowModel: getSortedRowModel()
   });
 
@@ -389,6 +529,22 @@ function OfferTableApp() {
       method: "POST"
     });
   }
+
+  const activeFilterChips = columnFilters.flatMap((cf) => {
+    const col = table.getColumn(cf.id);
+    const headerLabel = col ? getColumnLabel(col) : cf.id;
+
+    let label: string | null = null;
+    if (Array.isArray(cf.value)) {
+      const strValues = cf.value as string[];
+      if (strValues.length) label = `${headerLabel}: ${strValues.join(", ")}`;
+    } else if (typeof cf.value === "string" && cf.value) {
+      label = `${headerLabel}: ${cf.value}`;
+    }
+
+    if (!label) return [];
+    return [{ id: cf.id, label }];
+  });
 
   return (
     <div className="page-shell">
@@ -404,37 +560,10 @@ function OfferTableApp() {
           <button onClick={() => void handleRefreshClick()} type="button">
             Odśwież oferty
           </button>
-          <p className="summary">
-            {filteredOffers.length} / {offers.length} ofert
-          </p>
         </div>
       </div>
 
       <div className="toolbar">
-        <div className="toolbar-group">
-          <span>Filtr labeli</span>
-          <div className="labels">
-            {labels.map((label) => {
-              const isActive = activeLabels.includes(label);
-
-              return (
-                <button
-                  className={isActive ? "chip chip-active" : "chip"}
-                  key={label}
-                  onClick={() =>
-                    setActiveLabels((current) =>
-                      isActive ? current.filter((item) => item !== label) : [...current, label]
-                    )
-                  }
-                  type="button"
-                >
-                  {label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
         <div className="toolbar-group">
           <span>Widoczne kolumny</span>
           <div className="column-toggles">
@@ -443,7 +572,6 @@ function OfferTableApp() {
               .filter((column) => column.getCanHide())
               .map((column) => {
                 const label = getColumnLabel(column);
-
                 return (
                   <label className="toggle-chip" key={column.id}>
                     <input
@@ -460,8 +588,27 @@ function OfferTableApp() {
         </div>
       </div>
 
-      {filteredOffers.length === 0 ? (
-        <p className="empty-state">Brak ofert dla wybranych labeli.</p>
+      <div className="active-filters">
+        <span>
+          {table.getRowModel().rows.length} / {offers.length} ofert
+        </span>
+        {activeFilterChips.map((chip) => (
+          <span key={chip.id}>
+            <span>{chip.label}</span>
+            <button onClick={() => table.getColumn(chip.id)?.setFilterValue(undefined)} type="button">
+              ×
+            </button>
+          </span>
+        ))}
+        {columnFilters.length > 0 && (
+          <button onClick={() => setColumnFilters([])} type="button">
+            Wyczyść wszystkie filtry
+          </button>
+        )}
+      </div>
+
+      {table.getRowModel().rows.length === 0 ? (
+        <p className="empty-state">Brak ofert dla aktywnych filtrów.</p>
       ) : (
         <div className="table-wrap">
           <table>
@@ -488,6 +635,11 @@ function OfferTableApp() {
                   ))}
                 </tr>
               ))}
+              <tr>
+                {table.getHeaderGroups()[0]?.headers.map((header) => (
+                  <td key={`filter-${header.id}`}>{renderColumnFilter(header.column, offers)}</td>
+                ))}
+              </tr>
             </thead>
             <tbody>
               {table.getRowModel().rows.map((row) => (
