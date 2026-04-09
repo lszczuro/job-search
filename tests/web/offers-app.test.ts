@@ -169,4 +169,29 @@ describe("offers app", () => {
 
     expect(await screen.findByText("Nie udało się zapisać zmian.")).toBeTruthy();
   });
+
+  it("renders last updated status and enqueues refresh from the button", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ id: 12, kind: "manual_refresh", status: "pending", reused: false })
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    document.body.innerHTML = `
+      <div id="offers-app"></div>
+      <script id="initial-offers" type="application/json">${JSON.stringify(offers)}</script>
+      <script id="initial-refresh-meta" type="application/json">${JSON.stringify({
+        timezone: "Europe/Warsaw",
+        lastUpdatedAt: "2026-04-09T10:30:00.000Z"
+      })}</script>
+    `;
+
+    await import("../../src/web/client/offers-app");
+
+    expect(await screen.findByText(/Ostatni update:/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Odśwież oferty" }));
+
+    expect(fetchMock).toHaveBeenCalledWith("/imports/refresh", { method: "POST" });
+  });
 });

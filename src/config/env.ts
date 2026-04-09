@@ -1,6 +1,7 @@
 export type AppConfig = {
   port: number;
   refreshCron: string;
+  timezone: string;
   knownStack: string[];
   profileKeywords: string[];
   allowedCities: string[];
@@ -11,7 +12,8 @@ export type AppConfig = {
 export function parseEnv(env: Record<string, string | undefined>): AppConfig {
   return {
     port: Number(env.PORT ?? 3000),
-    refreshCron: env.REFRESH_CRON ?? "0 7 * * *",
+    refreshCron: env.REFRESH_CRON ?? "*/30 * * * *",
+    timezone: env.APP_TIMEZONE ?? "Europe/Warsaw",
     knownStack: (env.KNOWN_STACK ?? "")
       .split(",")
       .map((value) => value.trim())

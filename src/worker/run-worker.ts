@@ -1,3 +1,6 @@
+import cron from "node-cron";
+import { createRuntimeDeps } from "../app/runtime";
+
 type JobResult = {
   fetched: number;
   added: number;
@@ -13,8 +16,15 @@ type ExecuteNextJobArgs = {
     status: string;
   } | null>;
   markRunning: (id: number) => Promise<void>;
-  runJob: (jobId: number) => Promise<JobResult>;
+  runRefreshJob: (jobId: number) => Promise<JobResult>;
   markSucceeded: (id: number, result: JobResult) => Promise<void>;
+  markFailed: (id: number, errorMessage: string) => Promise<void>;
+};
+
+type ScheduleRefreshCronArgs = {
+  cron: string;
+  timezone: string;
+  enqueueScheduledRefresh: () => Promise<void>;
 };
 
 export async function executeNextJob(args: ExecuteNextJobArgs) {
@@ -25,8 +35,54 @@ export async function executeNextJob(args: ExecuteNextJobArgs) {
   }
 
   await args.markRunning(job.id);
-  const result = await args.runJob(job.id);
-  await args.markSucceeded(job.id, result);
+
+  try {
+    const result = await args.runRefreshJob(job.id);
+    await args.markSucceeded(job.id, result);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown import error";
+    await args.markFailed(job.id, errorMessage);
+  }
 
   return true;
+}
+
+export function scheduleRefreshCron(args: ScheduleRefreshCronArgs) {
+  const tick = async () => {
+    await args.enqueueScheduledRefresh();
+  };
+
+  return {
+    tick,
+    start() {
+      return cron.schedule(args.cron, () => {
+        void tick();
+      }, {
+        timezone: args.timezone
+      });
+    }
+  };
+}
+
+if (process.env.NODE_ENV !== "test") {
+  const runtime = createRuntimeDeps();
+  const scheduler = scheduleRefreshCron({
+    cron: runtime.refreshCron,
+    timezone: runtime.timezone,
+    enqueueScheduledRefresh: async () => {
+      await runtime.createOrReuseRefreshJob("scheduled_refresh");
+    }
+  });
+
+  scheduler.start();
+
+  setInterval(async () => {
+    await executeNextJob({
+      fetchPendingJob: runtime.fetchPendingJob,
+      markRunning: runtime.markJobRunning,
+      runRefreshJob: runtime.runRefreshJob,
+      markSucceeded: runtime.markJobSucceeded,
+      markFailed: runtime.markJobFailed
+    });
+  }, 1_000);
 }

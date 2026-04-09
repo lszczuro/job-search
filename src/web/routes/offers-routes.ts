@@ -4,9 +4,16 @@ import { serializeOffersForHtml, type OfferListItem } from "../offer-view-model"
 type OfferDeps = {
   listOffers?: () => Promise<OfferListItem[]>;
   updateOffer?: (id: number, payload: Record<string, string>) => Promise<unknown>;
+  getLatestSuccessfulRefresh?: () => Promise<string | null>;
+  timezone?: string;
 };
 
-export function renderOffersList(offers: OfferListItem[]) {
+type RefreshMeta = {
+  timezone: string;
+  lastUpdatedAt: string | null;
+};
+
+export function renderOffersList(offers: OfferListItem[], refreshMeta: RefreshMeta) {
   return [
     "<html><head><meta charset=\"utf-8\" /><title>Job Tracker</title>",
     "<style>",
@@ -48,6 +55,7 @@ export function renderOffersList(offers: OfferListItem[]) {
     "<h1>Job Tracker</h1>",
     "<div id=\"offers-app\"></div>",
     `<script id="initial-offers" type="application/json">${serializeOffersForHtml(offers)}</script>`,
+    `<script id="initial-refresh-meta" type="application/json">${JSON.stringify(refreshMeta)}</script>`,
     "<script type=\"module\" src=\"/assets/offers-app.js\"></script>",
     "<noscript><p class=\"fallback\">Włącz JavaScript, aby używać sortowania i filtrowania tabeli.</p></noscript>",
     "</div></main></body></html>"
@@ -57,8 +65,14 @@ export function renderOffersList(offers: OfferListItem[]) {
 export function registerOfferRoutes(app: FastifyInstance, deps: OfferDeps) {
   app.get("/", async (_, reply) => {
     const offers = (await deps.listOffers?.()) ?? [];
+    const lastUpdatedAt = (await deps.getLatestSuccessfulRefresh?.()) ?? null;
 
-    return reply.type("text/html").send(renderOffersList(offers));
+    return reply.type("text/html").send(
+      renderOffersList(offers, {
+        timezone: deps.timezone ?? "Europe/Warsaw",
+        lastUpdatedAt
+      })
+    );
   });
 
   app.get("/offers", async () => deps.listOffers?.() ?? []);

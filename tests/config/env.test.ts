@@ -12,7 +12,15 @@ describe("parseEnv", () => {
     });
 
     expect(config.port).toBe(3010);
+    expect(config.refreshCron).toBe("0 7 * * *");
     expect(config.knownStack).toEqual(["nodejs", "typescript", "openai"]);
     expect(config.allowedCities).toEqual(["Gliwice", "Katowice"]);
+  });
+
+  it("uses a 30-minute cron and explicit timezone by default", () => {
+    const config = parseEnv({});
+
+    expect(config.refreshCron).toBe("*/30 * * * *");
+    expect(config.timezone).toBe("Europe/Warsaw");
   });
 });

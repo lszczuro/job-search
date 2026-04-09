@@ -7,9 +7,11 @@ import { registerImportRoutes } from "./routes/import-routes";
 import type { OfferListItem } from "./offer-view-model";
 
 type ServerDeps = {
+  timezone?: string;
   listOffers?: () => Promise<OfferListItem[]>;
   updateOffer?: (id: number, payload: Record<string, string>) => Promise<unknown>;
-  createImportJob?: (kind: string) => Promise<unknown>;
+  createOrReuseRefreshJob?: (kind: "manual_refresh" | "scheduled_refresh") => Promise<unknown>;
+  getLatestSuccessfulRefresh?: () => Promise<string | null>;
 };
 
 let offersAppBundlePromise: Promise<string> | null = null;
@@ -37,7 +39,7 @@ async function getOffersAppBundle() {
 export function buildServer(deps: ServerDeps = {}) {
   const app = Fastify();
   const runtimeDeps =
-    deps.listOffers && deps.updateOffer && deps.createImportJob
+    deps.listOffers && deps.updateOffer && deps.createOrReuseRefreshJob && deps.getLatestSuccessfulRefresh
       ? null
       : createRuntimeDeps();
   const mergedDeps = { ...runtimeDeps, ...deps };
