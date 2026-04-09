@@ -31,7 +31,7 @@ Lokalny tracker ofert pracy AI/LLM z importem z publicznego MCP CzyJestEldorado,
 Aplikacja działa jako jeden kod źródłowy z dwoma runtime'ami:
 
 - `web`: Fastify, HTML shell, asset klientowy Reacta, endpointy HTTP
-- `worker`: lekki executor jobów importu
+- `worker`: scheduler i executor jobów importu
 
 Persistencja jest lokalna:
 
@@ -39,7 +39,7 @@ Persistencja jest lokalna:
 - domyślnie `./data/job-search.db`
 - przy Docker Compose dane siedzą w volume `job_tracker_data`
 
-Szczegóły architektury są w [docs/architecture.md](/var/tmp/vibe-kanban/worktrees/f36c-inicjalne-za-o-e/job-search/docs/architecture.md).
+Szczegóły architektury są w [docs/architecture.md](/var/tmp/vibe-kanban/worktrees/eed8-wire-automatic-o/job-search/docs/architecture.md).
 
 ## Wymagania
 
@@ -56,7 +56,8 @@ Przykładowa konfiguracja:
 ```env
 PORT=3000
 DATABASE_PATH=./data/job-search.db
-REFRESH_CRON=0 7 * * *
+REFRESH_CRON=*/30 * * * *
+APP_TIMEZONE=Europe/Warsaw
 IMPORT_PHRASE=ai
 KNOWN_STACK=nodejs,typescript,openai
 PROFILE_KEYWORDS=ai engineer,llm engineer
@@ -67,7 +68,8 @@ Znaczenie zmiennych:
 
 - `PORT`: port serwera HTTP
 - `DATABASE_PATH`: ścieżka do pliku SQLite
-- `REFRESH_CRON`: zachowane w konfiguracji, ale scheduler nie jest jeszcze aktywnie spięty end-to-end
+- `REFRESH_CRON`: cron dla schedulera workera; domyślnie co 30 minut
+- `APP_TIMEZONE`: timezone używany przez scheduler i formatowanie dat w GUI
 - `IMPORT_PHRASE`: fraza wysyłana do MCP `search_jobs`
 - `KNOWN_STACK`: technologie wpływające na priorytet i notatki
 - `PROFILE_KEYWORDS`: słowa kluczowe do lokalnego odrzucania ofert
@@ -94,7 +96,7 @@ npm run db:migrate
 npm run web
 ```
 
-5. W drugim terminalu możesz uruchomić worker:
+5. W drugim terminalu uruchom worker:
 
 ```bash
 npm run worker
@@ -106,7 +108,7 @@ npm run worker
 http://localhost:3000
 ```
 
-Uwaga: aktualnie najważniejszy flow importu działa synchronicznie w `POST /imports/refresh` po stronie aplikacji web. Worker istnieje jako osobny element architektury i ma własne testy, ale nie przejmuje jeszcze realnego refreshu z endpointu.
+`web` tylko enqueue'uje manual refresh i renderuje GUI. `worker wykonuje pending refresh jobs`, odpala scheduler z `REFRESH_CRON` i zapisuje wynik do `import_jobs`.
 
 ## Docker
 
@@ -147,24 +149,22 @@ Przykładowa odpowiedź:
 {
   "id": 1,
   "kind": "manual_refresh",
-  "fetched": 50,
-  "added": 3,
-  "rejected": 47,
-  "duplicates": 0,
-  "errors": 0
+  "status": "pending",
+  "reused": false
 }
 ```
 
 Flow wygląda tak:
 
-1. Endpoint wywołuje publiczne MCP CzyJestEldorado.
-2. Oferty są mapowane do lokalnego modelu.
-3. Lokalny filtr sprawdza dopasowanie do `PROFILE_KEYWORDS` i lokalizacji.
-4. System wylicza priorytet i generuje notatki.
-5. Duplikaty po `url` są odrzucane.
-6. Wynik i statystyki są zapisywane do SQLite.
+1. `POST /imports/refresh` tworzy albo zwraca istniejący aktywny refresh job.
+2. Worker pobiera pending job z `import_jobs`.
+3. Worker wywołuje publiczne MCP CzyJestEldorado.
+4. `runImport` filtruje oferty, liczy duplikaty i zapisuje zaakceptowane rekordy.
+5. Worker zapisuje status, statystyki i ewentualny błąd do `import_jobs`.
 
-Po imporcie odśwież stronę główną, a tabela zaczyta dane z lokalnej bazy.
+Scheduler działa w procesie `worker` według `REFRESH_CRON`, domyślnie co 30 minut. Jeśli refresh jest już `pending` albo `running`, worker nie tworzy duplikatu.
+
+Po imporcie odśwież stronę główną. GUI pokazuje przycisk ręcznego refreshu i datę ostatniego udanego update w `APP_TIMEZONE`.
 
 ## Interfejs webowy
 
@@ -172,6 +172,8 @@ Strona główna renderuje shell HTML z Fastify, a sama tabela jest hydradowana p
 
 Tabela wspiera:
 
+- przycisk `Odśwież oferty`
+- znacznik `Ostatni update`
 - link w kolumnie `Stanowisko`
 - sortowanie po kliknięciu nagłówka
 - filtrowanie po labelkach
@@ -225,7 +227,7 @@ GUI na stronie głównej używa tego endpointu do automatycznej inline edycji p�
 
 ### `POST /imports/refresh`
 
-Uruchamia ręczny import i zwraca statystyki joba.
+Tworzy albo zwraca aktywny job typu `manual_refresh` i odpowiada `202 Accepted`.
 
 ## Baza danych
 
@@ -262,15 +264,17 @@ Dodatkowo w repo są smoke testy dla README i dla podstawowego przepływu Docker
 
 ## Ograniczenia bieżącej wersji
 
-- `POST /imports/refresh` wykonuje import bez kolejki pośredniej; nie deleguje jeszcze pracy do osobnego workera
-- scheduler oparty o `REFRESH_CRON` nie jest jeszcze spięty z prawdziwym harmonogramem
+- aplikacja zakłada pojedynczego lokalnego użytkownika i jeden proces `worker`
+- job pozostawiony w stanie `running` po awarii workera nie jest jeszcze automatycznie odzyskiwany
 - GUI skupia się na tabeli listy, bez osobnego widoku szczegółu oferty
 - migracje Drizzle są przygotowane w projekcie, ale runtime zapewnia też własny bootstrap schematu przy starcie
 
 ## Dokumentacja
 
-- [docs/README.md](/var/tmp/vibe-kanban/worktrees/f36c-inicjalne-za-o-e/job-search/docs/README.md)
-- [docs/architecture.md](/var/tmp/vibe-kanban/worktrees/f36c-inicjalne-za-o-e/job-search/docs/architecture.md)
-- [docs/prd/README.md](/var/tmp/vibe-kanban/worktrees/f36c-inicjalne-za-o-e/job-search/docs/prd/README.md)
-- [docs/superpowers/specs/2026-04-09-job-tracker-design.md](/var/tmp/vibe-kanban/worktrees/f36c-inicjalne-za-o-e/job-search/docs/superpowers/specs/2026-04-09-job-tracker-design.md)
-- [docs/superpowers/plans/2026-04-09-job-tracker.md](/var/tmp/vibe-kanban/worktrees/f36c-inicjalne-za-o-e/job-search/docs/superpowers/plans/2026-04-09-job-tracker.md)
+- [docs/README.md](/var/tmp/vibe-kanban/worktrees/eed8-wire-automatic-o/job-search/docs/README.md)
+- [docs/architecture.md](/var/tmp/vibe-kanban/worktrees/eed8-wire-automatic-o/job-search/docs/architecture.md)
+- [docs/prd/README.md](/var/tmp/vibe-kanban/worktrees/eed8-wire-automatic-o/job-search/docs/prd/README.md)
+- [docs/superpowers/specs/2026-04-09-job-tracker-design.md](/var/tmp/vibe-kanban/worktrees/eed8-wire-automatic-o/job-search/docs/superpowers/specs/2026-04-09-job-tracker-design.md)
+- [docs/superpowers/specs/2026-04-09-automatic-refresh-design.md](/var/tmp/vibe-kanban/worktrees/eed8-wire-automatic-o/job-search/docs/superpowers/specs/2026-04-09-automatic-refresh-design.md)
+- [docs/superpowers/plans/2026-04-09-job-tracker.md](/var/tmp/vibe-kanban/worktrees/eed8-wire-automatic-o/job-search/docs/superpowers/plans/2026-04-09-job-tracker.md)
+- [docs/superpowers/plans/2026-04-09-automatic-refresh.md](/var/tmp/vibe-kanban/worktrees/eed8-wire-automatic-o/job-search/docs/superpowers/plans/2026-04-09-automatic-refresh.md)

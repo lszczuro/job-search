@@ -21,8 +21,7 @@
     ^
     |
 [ Worker runtime ]
-
-[ Fastify web ] -- fetch --> [ public MCP: https://czyjesteldorado.pl/_mcp ]
+[ Worker runtime ] -- fetch --> [ public MCP: https://czyjesteldorado.pl/_mcp ]
 ```
 
 ## Runtime Components
@@ -38,7 +37,7 @@ Odpowiedzialności:
 - serwowanie `/health`
 - serwowanie bundla `/assets/offers-app.js`
 - render strony głównej `/`
-- ręczne uruchamianie importu przez `POST /imports/refresh`
+- enqueue manual refresh przez `POST /imports/refresh`
 
 ### Client UI
 
@@ -47,7 +46,10 @@ Plik wejściowy: `src/web/client/offers-app.tsx`
 Odpowiedzialności:
 
 - odczyt zserializowanych ofert z HTML
+- odczyt metadanych ostatniego refreshu z HTML
 - render tabeli na React 19
+- obsługa przycisku ręcznego refreshu
+- formatowanie dat w skonfigurowanym timezone
 - konfiguracja TanStack Table
 - sortowanie
 - filtrowanie po labelkach
@@ -64,7 +66,9 @@ Odpowiedzialności:
 - bootstrap schematu przy starcie
 - odczyt listy ofert
 - aktualizacja wybranych pól oferty
-- uruchomienie importu i zapis statystyk joba
+- enqueue refresh jobów
+- odczyt statusu ostatniego udanego refreshu
+- wykonanie właściwego importu dla workera
 
 ### Import Adapter
 
@@ -95,12 +99,12 @@ Odpowiedzialności:
 
 Plik wejściowy: `src/worker/run-worker.ts`
 
-Obecny stan:
+Odpowiedzialności:
 
-- moduł istnieje
-- ma osobne testy jednostkowe
-- reprezentuje docelowy kierunek dla job execution
-- nie jest jeszcze końcowym egzekutorem realnego `POST /imports/refresh`
+- polling pending refresh jobs
+- scheduler oparty o `REFRESH_CRON`
+- wykonywanie realnego importu przez MCP adapter i `runImport`
+- zapis statusu oraz statystyk do `import_jobs`
 
 ## Data Model
 
@@ -149,19 +153,26 @@ Tabela historii importów. Najważniejsze pola:
 ### Manual Refresh
 
 1. Użytkownik wywołuje `POST /imports/refresh`.
-2. Runtime tworzy wpis `import_jobs` ze stanem `running`.
-3. Web wykonuje zapytanie do publicznego MCP CzyJestEldorado.
-4. Surowe oferty są mapowane do lokalnego modelu.
+2. Runtime tworzy albo zwraca aktywny wpis `import_jobs` ze stanem `pending` lub `running`.
+3. Worker pobiera kolejny pending refresh job i oznacza go jako `running`.
+4. Worker wykonuje zapytanie do publicznego MCP CzyJestEldorado.
 5. `runImport` filtruje oferty i odrzuca duplikaty po `url`.
 6. Zaakceptowane rekordy trafiają do `job_offers`.
 7. `import_jobs` dostaje statystyki końcowe i stan `succeeded` albo `failed`.
 
+### Scheduled Refresh
+
+1. Worker uruchamia scheduler z `REFRESH_CRON`.
+2. Na każdym ticku worker próbuje utworzyć `scheduled_refresh`.
+3. Jeśli refresh jest już `pending` albo `running`, nowy job nie powstaje.
+4. Pending job przechodzi przez ten sam pipeline co manual refresh.
+
 ### Offer Listing
 
 1. `GET /` pobiera oferty z SQLite.
-2. Serwer renderuje HTML shell i osadza JSON z ofertami.
+2. Serwer renderuje HTML shell i osadza JSON z ofertami oraz metadane ostatniego refreshu.
 3. Przeglądarka ładuje `/assets/offers-app.js`.
-4. React renderuje interaktywną tabelę.
+4. React renderuje interaktywną tabelę, przycisk refresh i datę ostatniego update.
 
 ### Offer Update
 
@@ -175,6 +186,8 @@ Tabela historii importów. Najważniejsze pola:
   Jedyny zewnętrzny runtime dependency dla realnego importu.
 - SQLite / `better-sqlite3`
   Lokalna persistencja bez zewnętrznego serwera bazy.
+- `node-cron`
+  Scheduler workera z obsługą timezone.
 - React + TanStack Table
   Interaktywny frontend tabelaryczny.
 
@@ -182,8 +195,8 @@ Tabela historii importów. Najważniejsze pola:
 
 - aplikacja jest zoptymalizowana pod jednego lokalnego użytkownika, nie pod multi-user concurrency
 - runtime bootstrappuje schemat SQL przy starcie, mimo że w repo są też narzędzia Drizzle
-- import ręczny działa synchronicznie w procesie web, więc dłuższy upstream call blokuje ten request
-- worker i `REFRESH_CRON` nie są jeszcze domkniętym schedulerem produkcyjnym
+- worker i web współdzielą SQLite, więc deduplikacja refreshu opiera się na stanie `import_jobs`
+- brak automatycznego odzyskiwania jobów pozostawionych w stanie `running` po crashu workera
 
 ## Key Design Decisions (ADR)
 
@@ -199,7 +212,7 @@ Projekt ma być prosty w uruchomieniu lokalnie, ale import nie powinien wymusza�
 Jeden kod źródłowy, jeden obraz Dockera, dwa runtime'y: `web` i `worker`.
 
 **Consequences:**  
-Prosty deploy lokalny i miejsce na rozdzielenie odpowiedzialności, ale część logiki nadal jest tymczasowo wykonywana w `web`.
+Prosty deploy lokalny i klarowny podział odpowiedzialności: `web` przyjmuje trigger, `worker` wykonuje import i scheduler.
 
 ### ADR-002: SQLite as the Primary Store
 

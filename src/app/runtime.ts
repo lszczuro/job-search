@@ -1,9 +1,10 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import Database from "better-sqlite3";
+import { searchJobsViaMcp } from "../adapters/czyjesteldorado/mcp-client";
 import { parseEnv } from "../config/env";
 import { runImport } from "../core/importing/run-import";
-import { searchJobsViaMcp } from "../adapters/czyjesteldorado/mcp-client";
+import { createImportJobsRepository } from "../db/repositories/import-jobs-repository";
 import type { OfferListItem } from "../web/offer-view-model";
 
 function ensureSchema(sqlite: Database.Database) {
@@ -54,8 +55,11 @@ export function createRuntimeDeps(env = process.env) {
   const sqlite = new Database(config.databasePath);
 
   ensureSchema(sqlite);
+  const importJobs = createImportJobsRepository(sqlite);
 
   return {
+    refreshCron: config.refreshCron,
+    timezone: config.timezone,
     async listOffers() {
       return sqlite
         .prepare(
@@ -104,122 +108,82 @@ export function createRuntimeDeps(env = process.env) {
 
       return { ok: true };
     },
-    async createImportJob(kind: string) {
-      const createdAt = new Date().toISOString();
-      const inserted = sqlite
-        .prepare(
-          `
-            INSERT INTO import_jobs (
-              kind, status, requested_by, payload, created_at, started_at
-            ) VALUES (?, 'running', 'user', '{}', ?, ?)
-          `
-        )
-        .run(kind, createdAt, createdAt);
+    async createOrReuseRefreshJob(kind: "manual_refresh" | "scheduled_refresh") {
+      return importJobs.createOrReuseRefreshJob(kind, kind === "manual_refresh" ? "user" : "system");
+    },
+    async getLatestSuccessfulRefresh() {
+      return importJobs.getLatestSuccessfulRefresh();
+    },
+    async fetchPendingJob() {
+      return importJobs.fetchPendingJob();
+    },
+    async markJobRunning(id: number) {
+      return importJobs.markJobRunning(id);
+    },
+    async markJobSucceeded(
+      id: number,
+      result: { fetched: number; added: number; rejected: number; duplicates: number; errors: number }
+    ) {
+      return importJobs.markJobSucceeded(id, result);
+    },
+    async markJobFailed(id: number, errorMessage: string) {
+      return importJobs.markJobFailed(id, errorMessage);
+    },
+    async runRefreshJob() {
+      const offers = await searchJobsViaMcp({
+        phrase: config.importPhrase,
+        sortOrder: "newest",
+        minSalary: null
+      });
 
-      const jobId = Number(inserted.lastInsertRowid);
+      return runImport({
+        offers,
+        profile: {
+          knownStack: config.knownStack,
+          profileKeywords: config.profileKeywords,
+          allowedCities: config.allowedCities
+        },
+        hasUrl: async (url) => {
+          const row = sqlite
+            .prepare(`SELECT 1 as found FROM job_offers WHERE url = ? LIMIT 1`)
+            .get(url) as { found: number } | undefined;
 
-      try {
-        const offers = await searchJobsViaMcp({
-          phrase: config.importPhrase,
-          sortOrder: "newest",
-          minSalary: null
-        });
-
-        const result = await runImport({
-          offers,
-          profile: {
-            knownStack: config.knownStack,
-            profileKeywords: config.profileKeywords,
-            allowedCities: config.allowedCities
-          },
-          hasUrl: async (url) => {
-            const row = sqlite
-              .prepare(`SELECT 1 as found FROM job_offers WHERE url = ? LIMIT 1`)
-              .get(url) as { found: number } | undefined;
-
-            return Boolean(row?.found);
-          },
-          saveOffer: async (offer) => {
-            sqlite
-              .prepare(
-                `
-                  INSERT INTO job_offers (
-                    stanowisko, firma, url, widełki_od, widełki_do, lokalizacja, tryb_pracy,
-                    kontrakt, status_ogloszenia, status_aplikacji, priorytet, notatki,
-                    data_dodania, ostatnia_weryfikacja, source, source_external_id,
-                    created_at, updated_at
-                  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                `
-              )
-              .run(
-                offer.title,
-                offer.company,
-                offer.url,
-                offer.salaryFrom ?? null,
-                offer.salaryTo ?? null,
-                offer.location,
-                offer.workMode,
-                offer.contract,
-                "🟢 Aktywne",
-                "📋 Zapisana",
-                offer.priority,
-                offer.generatedNotes.join(", "),
-                new Date().toISOString().slice(0, 10),
-                null,
-                "czyjesteldorado_mcp",
-                null,
-                new Date().toISOString(),
-                new Date().toISOString()
-              );
-          }
-        });
-
-        sqlite
-          .prepare(
-            `
-              UPDATE import_jobs
-              SET status = 'succeeded',
-                  stats_fetched = ?,
-                  stats_added = ?,
-                  stats_rejected = ?,
-                  stats_duplicates = ?,
-                  finished_at = ?
-              WHERE id = ?
-            `
-          )
-          .run(
-            result.fetched,
-            result.added,
-            result.rejected,
-            result.duplicates,
-            new Date().toISOString(),
-            jobId
-          );
-
-        return {
-          id: jobId,
-          kind,
-          ...result
-        };
-      } catch (error) {
-        sqlite
-          .prepare(
-            `
-              UPDATE import_jobs
-              SET status = 'failed',
-                  error_message = ?,
-                  finished_at = ?
-              WHERE id = ?
-            `
-          )
-          .run(
-            error instanceof Error ? error.message : "Unknown import error",
-            new Date().toISOString(),
-            jobId
-          );
-
-        throw error;
-      }
+          return Boolean(row?.found);
+        },
+        saveOffer: async (offer) => {
+          sqlite
+            .prepare(
+              `
+                INSERT INTO job_offers (
+                  stanowisko, firma, url, widełki_od, widełki_do, lokalizacja, tryb_pracy,
+                  kontrakt, status_ogloszenia, status_aplikacji, priorytet, notatki,
+                  data_dodania, ostatnia_weryfikacja, source, source_external_id,
+                  created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              `
+            )
+            .run(
+              offer.title,
+              offer.company,
+              offer.url,
+              offer.salaryFrom ?? null,
+              offer.salaryTo ?? null,
+              offer.location,
+              offer.workMode,
+              offer.contract,
+              "🟢 Aktywne",
+              "📋 Zapisana",
+              offer.priority,
+              offer.generatedNotes.join(", "),
+              new Date().toISOString().slice(0, 10),
+              null,
+              "czyjesteldorado_mcp",
+              null,
+              new Date().toISOString(),
+              new Date().toISOString()
+            );
+        }
+      });
     }
   };
 }

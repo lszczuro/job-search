@@ -30,6 +30,7 @@ Utrzymywać lokalny, szybki i prosty tracker ofert AI/LLM, który zastępuje rę
 - edycja wybranych pól oferty przez HTTP
 - frontend tabelaryczny z React + TanStack Table
 - ręczne odświeżenie danych przez `POST /imports/refresh`
+- automatyczne odświeżenie przez worker i cron
 
 ## Out of Scope
 
@@ -63,14 +64,12 @@ Utrzymywać lokalny, szybki i prosty tracker ofert AI/LLM, który zastępuje rę
 
 ## Known Gaps
 
-- worker nie obsługuje jeszcze realnego refreshu end-to-end
-- `REFRESH_CRON` nie jest jeszcze aktywnym schedulerem
 - brak dedykowanego widoku szczegółu oferty
 - brak importu CSV spiętego w bieżącym UI
+- brak automatycznego odzyskiwania refresh jobów po awarii workera
 
 ## Next Likely Iterations
 
-- przepięcie `POST /imports/refresh` na kolejkę/job execution przez worker
-- aktywny scheduler oparty o cron
 - prosty panel statystyk importów
 - wygodniejsza edycja statusów z poziomu GUI
+- odzyskiwanie zawieszonych jobów po restarcie workera

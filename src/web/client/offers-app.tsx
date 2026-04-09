@@ -38,12 +38,42 @@ function readInitialOffers() {
   return JSON.parse(payload) as OfferListItem[];
 }
 
+type RefreshMeta = {
+  timezone: string;
+  lastUpdatedAt: string | null;
+};
+
+function readRefreshMeta() {
+  const payload = document.getElementById("initial-refresh-meta")?.textContent;
+
+  if (!payload) {
+    return {
+      timezone: "Europe/Warsaw",
+      lastUpdatedAt: null
+    } satisfies RefreshMeta;
+  }
+
+  return JSON.parse(payload) as RefreshMeta;
+}
+
 function formatDate(value?: string | null) {
   return value ? value.slice(0, 10) : "—";
 }
 
 function formatAmount(value?: number | null) {
   return value == null ? "—" : String(value);
+}
+
+function formatRefreshTimestamp(value: string | null, timezone: string) {
+  if (!value) {
+    return "Jeszcze nie odświeżono";
+  }
+
+  return new Intl.DateTimeFormat("pl-PL", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: timezone
+  }).format(new Date(value));
 }
 
 function getColumnLabel(column: Column<OfferListItem>) {
@@ -68,6 +98,7 @@ function mergeOptions(baseOptions: string[], offers: OfferListItem[], field: Edi
 
 function OfferTableApp() {
   const [offers, setOffers] = useState<OfferListItem[]>(() => readInitialOffers());
+  const [refreshMeta] = useState<RefreshMeta>(() => readRefreshMeta());
   const [sorting, setSorting] = useState<SortingState>([]);
   const [activeLabels, setActiveLabels] = useState<string[]>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
@@ -353,16 +384,30 @@ function OfferTableApp() {
     getSortedRowModel: getSortedRowModel()
   });
 
+  async function handleRefreshClick() {
+    await fetch("/imports/refresh", {
+      method: "POST"
+    });
+  }
+
   return (
     <div className="page-shell">
       <div className="page-header">
         <div>
           <p className="eyebrow">Job Tracker</p>
           <h1>Oferty dopasowane do profilu</h1>
+          <p className="summary">
+            Ostatni update: {formatRefreshTimestamp(refreshMeta.lastUpdatedAt, refreshMeta.timezone)}
+          </p>
         </div>
-        <p className="summary">
-          {filteredOffers.length} / {offers.length} ofert
-        </p>
+        <div>
+          <button onClick={() => void handleRefreshClick()} type="button">
+            Odśwież oferty
+          </button>
+          <p className="summary">
+            {filteredOffers.length} / {offers.length} ofert
+          </p>
+        </div>
       </div>
 
       <div className="toolbar">

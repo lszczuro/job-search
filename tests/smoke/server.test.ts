@@ -12,9 +12,11 @@ describe("buildServer", () => {
 
   it("serves the client bundle for the offers table", async () => {
     const app = buildServer({
+      timezone: "Europe/Warsaw",
       listOffers: async () => [],
       updateOffer: async () => ({ ok: true }),
-      createImportJob: async () => ({ ok: true })
+      createOrReuseRefreshJob: async () => ({ ok: true }),
+      getLatestSuccessfulRefresh: async () => null
     });
     const response = await app.inject({ method: "GET", url: "/assets/offers-app.js" });
 

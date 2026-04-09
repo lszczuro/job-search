@@ -3,30 +3,42 @@ import { renderOffersList } from "../../src/web/routes/offers-routes";
 
 describe("renderOffersList", () => {
   it("renders a React app shell with serialized offers and client bundle", () => {
-    const html = renderOffersList([
+    const html = renderOffersList(
+      [
+        {
+          id: 1,
+          stanowisko: "AI Engineer",
+          firma: "Acme",
+          priorytet: "🔥 Teraz",
+          url: "https://example.com/offers/1",
+          lokalizacja: "Katowice",
+          trybPracy: "Remote",
+          kontrakt: "B2B",
+          statusOgloszenia: "🟢 Aktywne",
+          statusAplikacji: "📋 Zapisana",
+          notatki: "postgres,aws"
+        }
+      ],
       {
-        id: 1,
-        stanowisko: "AI Engineer",
-        firma: "Acme",
-        priorytet: "🔥 Teraz",
-        url: "https://example.com/offers/1",
-        lokalizacja: "Katowice",
-        trybPracy: "Remote",
-        kontrakt: "B2B",
-        statusOgloszenia: "🟢 Aktywne",
-        statusAplikacji: "📋 Zapisana",
-        notatki: "postgres,aws"
+        timezone: "Europe/Warsaw",
+        lastUpdatedAt: "2026-04-09T10:30:00.000Z"
       }
-    ]);
+    );
 
     expect(html).toContain('id="offers-app"');
     expect(html).toContain("/assets/offers-app.js");
     expect(html).toContain('"url":"https://example.com/offers/1"');
     expect(html).toContain('"statusAplikacji":"📋 Zapisana"');
+    expect(html).toContain('id="initial-refresh-meta"');
+    expect(html).toContain('"timezone":"Europe/Warsaw"');
+    expect(html).toContain('"lastUpdatedAt":"2026-04-09T10:30:00.000Z"');
   });
 
   it("renders a visible empty state when there are no offers", () => {
-    const html = renderOffersList([]);
+    const html = renderOffersList([], {
+      timezone: "Europe/Warsaw",
+      lastUpdatedAt: null
+    });
 
     expect(html).toContain("Job Tracker");
     expect(html).toContain('id="offers-app"');
