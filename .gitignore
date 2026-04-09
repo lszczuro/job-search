@@ -17,4 +17,4 @@ __pycache__/
 logs/*.local.jsonl
 .worktrees/*
 .claude/settings.local.json
-.codex/
+.codex/*
