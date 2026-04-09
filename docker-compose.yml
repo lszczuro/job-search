@@ -1,0 +1,21 @@
+services:
+  web:
+    build: .
+    command: npm run web
+    env_file:
+      - .env
+    ports:
+      - "3000:3000"
+    volumes:
+      - job_tracker_data:/app/data
+
+  worker:
+    build: .
+    command: npm run worker
+    env_file:
+      - .env
+    volumes:
+      - job_tracker_data:/app/data
+
+volumes:
+  job_tracker_data:
