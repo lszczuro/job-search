@@ -12,9 +12,7 @@ import {
 } from "@tanstack/react-table";
 import { getOfferLabels, getOfferNoteLabels, type OfferListItem } from "../offer-view-model";
 
-type EditableField = "statusAplikacji" | "priorytet" | "statusOgloszenia" | "notatki";
-
-type EditableOfferDraft = Record<EditableField, string>;
+type EditableField = "statusAplikacji" | "priorytet" | "statusOgloszenia";
 
 type SaveState =
   | { status: "idle" }
@@ -52,36 +50,20 @@ function getColumnLabel(column: Column<OfferListItem>) {
   return typeof column.columnDef.header === "string" ? column.columnDef.header : column.id;
 }
 
-function getEditableDraft(offer: OfferListItem): EditableOfferDraft {
-  return {
-    statusAplikacji: offer.statusAplikacji ?? "",
-    priorytet: offer.priorytet ?? "",
-    statusOgloszenia: offer.statusOgloszenia ?? "",
-    notatki: offer.notatki ?? ""
-  };
-}
-
-function getDraftValue(
-  drafts: Partial<Record<number, EditableOfferDraft>>,
-  offer: OfferListItem,
-  field: EditableField
-) {
-  return drafts[offer.id]?.[field] ?? getEditableDraft(offer)[field];
-}
-
-function isDraftDirty(drafts: Partial<Record<number, EditableOfferDraft>>, offer: OfferListItem) {
-  const current = getEditableDraft(offer);
-  const draft = drafts[offer.id];
-
-  if (!draft) {
-    return false;
+function getFieldValue(offer: OfferListItem, field: EditableField) {
+  if (field === "statusAplikacji") {
+    return offer.statusAplikacji ?? "";
   }
 
-  return (Object.keys(current) as EditableField[]).some((field) => draft[field] !== current[field]);
+  if (field === "priorytet") {
+    return offer.priorytet ?? "";
+  }
+
+  return offer.statusOgloszenia ?? "";
 }
 
 function mergeOptions(baseOptions: string[], offers: OfferListItem[], field: EditableField) {
-  return [...new Set([...baseOptions, ...offers.map((offer) => getEditableDraft(offer)[field]).filter(Boolean)])];
+  return [...new Set([...baseOptions, ...offers.map((offer) => getFieldValue(offer, field)).filter(Boolean)])];
 }
 
 function OfferTableApp() {
@@ -89,8 +71,7 @@ function OfferTableApp() {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [activeLabels, setActiveLabels] = useState<string[]>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
-  const [drafts, setDrafts] = useState<Partial<Record<number, EditableOfferDraft>>>({});
-  const [saveStates, setSaveStates] = useState<Partial<Record<number, SaveState>>>({});
+  const [saveStates, setSaveStates] = useState<Partial<Record<number, Partial<Record<EditableField, SaveState>>>>>({});
 
   const labels = useMemo(
     () => [...new Set(offers.flatMap((offer) => getOfferLabels(offer)))].sort((a, b) => a.localeCompare(b)),
@@ -118,51 +99,34 @@ function OfferTableApp() {
     [activeLabels, offers]
   );
 
-  const setFieldValue = (offer: OfferListItem, field: EditableField, value: string) => {
-    setDrafts((current) => ({
+  const setFieldSaveState = (offerId: number, field: EditableField, state: SaveState) => {
+    setSaveStates((current) => ({
       ...current,
-      [offer.id]: {
-        ...getEditableDraft(offer),
-        ...current[offer.id],
-        [field]: value
+      [offerId]: {
+        ...current[offerId],
+        [field]: state
       }
     }));
-    setSaveStates((current) => ({ ...current, [offer.id]: { status: "idle" } }));
   };
 
-  const saveOffer = async (offer: OfferListItem) => {
-    const draft = drafts[offer.id] ?? getEditableDraft(offer);
-    const payload: Record<string, string> = {};
-    const nextOffer: OfferListItem = { ...offer };
+  const saveOfferField = async (offer: OfferListItem, field: EditableField, value: string) => {
+    const previousValue = getFieldValue(offer, field);
 
-    if (draft.statusAplikacji !== (offer.statusAplikacji ?? "")) {
-      payload.status_aplikacji = draft.statusAplikacji;
-      nextOffer.statusAplikacji = draft.statusAplikacji;
-    }
-
-    if (draft.priorytet !== (offer.priorytet ?? "")) {
-      payload.priorytet = draft.priorytet;
-      nextOffer.priorytet = draft.priorytet;
-    }
-
-    if (draft.statusOgloszenia !== (offer.statusOgloszenia ?? "")) {
-      payload.status_ogloszenia = draft.statusOgloszenia;
-      nextOffer.statusOgloszenia = draft.statusOgloszenia;
-    }
-
-    if (draft.notatki !== (offer.notatki ?? "")) {
-      payload.notatki = draft.notatki;
-      nextOffer.notatki = draft.notatki;
-    }
-
-    if (Object.keys(payload).length === 0) {
+    if (previousValue === value) {
       return;
     }
 
-    setSaveStates((current) => ({
-      ...current,
-      [offer.id]: { status: "saving", message: "Zapisywanie..." }
-    }));
+    const payload =
+      field === "statusAplikacji"
+        ? { status_aplikacji: value }
+        : field === "priorytet"
+          ? { priorytet: value }
+          : { status_ogloszenia: value };
+
+    setOffers((current) =>
+      current.map((item) => (item.id === offer.id ? { ...item, [field]: value } : item))
+    );
+    setFieldSaveState(offer.id, field, { status: "saving", message: "Zapisywanie..." });
 
     try {
       const response = await fetch(`/offers/${offer.id}`, {
@@ -178,21 +142,12 @@ function OfferTableApp() {
         throw new Error("SAVE_FAILED");
       }
 
-      setOffers((current) => current.map((item) => (item.id === offer.id ? nextOffer : item)));
-      setDrafts((current) => {
-        const next = { ...current };
-        delete next[offer.id];
-        return next;
-      });
-      setSaveStates((current) => ({
-        ...current,
-        [offer.id]: { status: "success", message: "Zapisano" }
-      }));
+      setFieldSaveState(offer.id, field, { status: "success", message: "Zapisano" });
     } catch {
-      setSaveStates((current) => ({
-        ...current,
-        [offer.id]: { status: "error", message: "Nie udało się zapisać zmian." }
-      }));
+      setOffers((current) =>
+        current.map((item) => (item.id === offer.id ? { ...item, [field]: previousValue } : item))
+      );
+      setFieldSaveState(offer.id, field, { status: "error", message: "Nie udało się zapisać zmian." });
     }
   };
 
@@ -211,8 +166,7 @@ function OfferTableApp() {
         accessorKey: "statusAplikacji",
         header: "Status aplikacji",
         cell: ({ row }) => {
-          const isDirty = isDraftDirty(drafts, row.original);
-          const saveState = saveStates[row.original.id] ?? { status: "idle" };
+          const saveState = saveStates[row.original.id]?.statusAplikacji ?? { status: "idle" };
 
           return (
             <div className="inline-editor">
@@ -221,9 +175,10 @@ function OfferTableApp() {
               </label>
               <select
                 className="edit-select"
+                disabled={saveState.status === "saving"}
                 id={`status-aplikacji-${row.original.id}`}
-                onChange={(event) => setFieldValue(row.original, "statusAplikacji", event.target.value)}
-                value={getDraftValue(drafts, row.original, "statusAplikacji")}
+                onChange={(event) => void saveOfferField(row.original, "statusAplikacji", event.target.value)}
+                value={row.original.statusAplikacji ?? ""}
               >
                 {statusAplikacjiOptions.map((option) => (
                   <option key={option} value={option}>
@@ -231,25 +186,14 @@ function OfferTableApp() {
                   </option>
                 ))}
               </select>
-              <div className="save-actions">
-                <button
-                  aria-label={`Zapisz zmiany dla ${row.original.stanowisko}`}
-                  className="save-button"
-                  disabled={!isDirty || saveState.status === "saving"}
-                  onClick={() => void saveOffer(row.original)}
-                  type="button"
+              {saveState.status === "saving" || saveState.status === "success" || saveState.status === "error" ? (
+                <span
+                  aria-live="polite"
+                  className={saveState.status === "error" ? "save-feedback save-feedback-error" : "save-feedback"}
                 >
-                  Zapisz
-                </button>
-                {saveState.status === "saving" || saveState.status === "success" || saveState.status === "error" ? (
-                  <span
-                    aria-live="polite"
-                    className={saveState.status === "error" ? "save-feedback save-feedback-error" : "save-feedback"}
-                  >
-                    {saveState.message}
-                  </span>
-                ) : null}
-              </div>
+                  {saveState.message}
+                </span>
+              ) : null}
             </div>
           );
         }
@@ -275,37 +219,25 @@ function OfferTableApp() {
         id: "notatki",
         header: "Notatki",
         cell: ({ row }) => (
-          <div className="inline-editor">
-            <label className="sr-only" htmlFor={`notatki-${row.original.id}`}>
-              Notatki dla {row.original.stanowisko}
-            </label>
-            <input
-              className="edit-input"
-              id={`notatki-${row.original.id}`}
-              onChange={(event) => setFieldValue(row.original, "notatki", event.target.value)}
-              type="text"
-              value={getDraftValue(drafts, row.original, "notatki")}
-            />
-            <div className="labels">
-              {getOfferNoteLabels(row.original).map((label) => {
-                const isActive = activeLabels.includes(label);
+          <div className="labels">
+            {getOfferNoteLabels(row.original).map((label) => {
+              const isActive = activeLabels.includes(label);
 
-                return (
-                  <button
-                    className={isActive ? "chip chip-active" : "chip"}
-                    key={label}
-                    onClick={() =>
-                      setActiveLabels((current) =>
-                        isActive ? current.filter((item) => item !== label) : [...current, label]
-                      )
-                    }
-                    type="button"
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
+              return (
+                <button
+                  className={isActive ? "chip chip-active" : "chip"}
+                  key={label}
+                  onClick={() =>
+                    setActiveLabels((current) =>
+                      isActive ? current.filter((item) => item !== label) : [...current, label]
+                    )
+                  }
+                  type="button"
+                >
+                  {label}
+                </button>
+              );
+            })}
           </div>
         ),
         sortingFn: (left, right) =>
@@ -331,55 +263,81 @@ function OfferTableApp() {
       {
         accessorKey: "priorytet",
         header: "Priorytet",
-        cell: ({ row }) => (
-          <>
-            <label className="sr-only" htmlFor={`priorytet-${row.original.id}`}>
-              Priorytet dla {row.original.stanowisko}
-            </label>
-            <select
-              className="edit-select"
-              id={`priorytet-${row.original.id}`}
-              onChange={(event) => setFieldValue(row.original, "priorytet", event.target.value)}
-              value={getDraftValue(drafts, row.original, "priorytet")}
-            >
-              {priorytetOptions.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          </>
-        )
+        cell: ({ row }) => {
+          const saveState = saveStates[row.original.id]?.priorytet ?? { status: "idle" };
+
+          return (
+            <div className="inline-editor">
+              <label className="sr-only" htmlFor={`priorytet-${row.original.id}`}>
+                Priorytet dla {row.original.stanowisko}
+              </label>
+              <select
+                className="edit-select"
+                disabled={saveState.status === "saving"}
+                id={`priorytet-${row.original.id}`}
+                onChange={(event) => void saveOfferField(row.original, "priorytet", event.target.value)}
+                value={row.original.priorytet ?? ""}
+              >
+                {priorytetOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+              {saveState.status === "saving" || saveState.status === "success" || saveState.status === "error" ? (
+                <span
+                  aria-live="polite"
+                  className={saveState.status === "error" ? "save-feedback save-feedback-error" : "save-feedback"}
+                >
+                  {saveState.message}
+                </span>
+              ) : null}
+            </div>
+          );
+        }
       },
       {
         accessorKey: "statusOgloszenia",
         header: "Status ogłoszenia",
-        cell: ({ row }) => (
-          <>
-            <label className="sr-only" htmlFor={`status-ogloszenia-${row.original.id}`}>
-              Status ogłoszenia dla {row.original.stanowisko}
-            </label>
-            <select
-              className="edit-select"
-              id={`status-ogloszenia-${row.original.id}`}
-              onChange={(event) => setFieldValue(row.original, "statusOgloszenia", event.target.value)}
-              value={getDraftValue(drafts, row.original, "statusOgloszenia")}
-            >
-              {statusOgloszeniaOptions.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          </>
-        )
+        cell: ({ row }) => {
+          const saveState = saveStates[row.original.id]?.statusOgloszenia ?? { status: "idle" };
+
+          return (
+            <div className="inline-editor">
+              <label className="sr-only" htmlFor={`status-ogloszenia-${row.original.id}`}>
+                Status ogłoszenia dla {row.original.stanowisko}
+              </label>
+              <select
+                className="edit-select"
+                disabled={saveState.status === "saving"}
+                id={`status-ogloszenia-${row.original.id}`}
+                onChange={(event) => void saveOfferField(row.original, "statusOgloszenia", event.target.value)}
+                value={row.original.statusOgloszenia ?? ""}
+              >
+                {statusOgloszeniaOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+              {saveState.status === "saving" || saveState.status === "success" || saveState.status === "error" ? (
+                <span
+                  aria-live="polite"
+                  className={saveState.status === "error" ? "save-feedback save-feedback-error" : "save-feedback"}
+                >
+                  {saveState.message}
+                </span>
+              ) : null}
+            </div>
+          );
+        }
       },
       {
         accessorKey: "trybPracy",
         header: "Tryb pracy"
       }
     ],
-    [activeLabels, drafts, priorytetOptions, saveStates, statusAplikacjiOptions, statusOgloszeniaOptions]
+    [activeLabels, priorytetOptions, saveStates, statusAplikacjiOptions, statusOgloszeniaOptions]
   );
 
   const table = useReactTable({
