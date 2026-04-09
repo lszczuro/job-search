@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "dev": "tsx src/web/server.ts",
+    "dev": "portless run --name job-search tsx src/web/server.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "web": "tsx src/web/server.ts",
