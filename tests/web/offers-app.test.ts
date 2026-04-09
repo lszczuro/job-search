@@ -121,7 +121,7 @@ describe("offers app", () => {
     expect(screen.queryByText("Acme")).toBeNull();
   });
 
-  it("saves inline edits for an offer row and updates the visible value", async () => {
+  it("saves inline edits immediately after changing a select value", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ ok: true })
@@ -138,7 +138,6 @@ describe("offers app", () => {
     fireEvent.change(await screen.findByLabelText("Status aplikacji dla AI Engineer"), {
       target: { value: "CV wysłane" }
     });
-    fireEvent.click(screen.getByRole("button", { name: "Zapisz zmiany dla AI Engineer" }));
 
     expect(fetchMock).toHaveBeenCalledWith("/offers/1", {
       method: "PATCH",
@@ -147,9 +146,10 @@ describe("offers app", () => {
     });
     expect(await screen.findByText("Zapisano")).toBeTruthy();
     expect(screen.getByDisplayValue("CV wysłane")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Zapisz zmiany dla AI Engineer" })).toBeNull();
   });
 
-  it("shows an inline error when saving edited fields fails", async () => {
+  it("shows an inline error when autosaving an edited field fails", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,
       json: async () => ({ ok: false })
@@ -166,7 +166,6 @@ describe("offers app", () => {
     fireEvent.change(await screen.findByLabelText("Status aplikacji dla AI Engineer"), {
       target: { value: "CV wysłane" }
     });
-    fireEvent.click(screen.getByRole("button", { name: "Zapisz zmiany dla AI Engineer" }));
 
     expect(await screen.findByText("Nie udało się zapisać zmian.")).toBeTruthy();
   });

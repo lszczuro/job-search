@@ -11,7 +11,7 @@ Lokalny tracker ofert pracy AI/LLM z importem z publicznego MCP CzyJestEldorado,
 - sortowanie kolumn
 - filtrowanie po labelkach generowanych z notatek i priorytetu
 - przełączanie widoczności kolumn
-- inline editing dla `status_aplikacji`, `priorytet`, `status_ogloszenia` i `notatki`
+- inline editing dla `status_aplikacji`, `priorytet` i `status_ogloszenia`
 - ręczne odświeżenie importu przez HTTP
 - uruchamianie przez Node lokalnie albo przez Docker Compose
 
@@ -176,9 +176,10 @@ Tabela wspiera:
 - sortowanie po kliknięciu nagłówka
 - filtrowanie po labelkach
 - ukrywanie i pokazywanie kolumn
-- inline edycję pól `status_aplikacji`, `priorytet`, `status_ogloszenia` i `notatki`
-- zapis zmian przez `PATCH /offers/:id` bez przeładowania strony
+- inline edycję pól `status_aplikacji`, `priorytet` i `status_ogloszenia`
+- automatyczny zapis zmian przez `PATCH /offers/:id` bez przeładowania strony
 - widoczne statusy `Zapisywanie...`, `Zapisano` i komunikat błędu przy nieudanym zapisie
+- `Notatki` renderowane jako same labele do filtrowania, bez pola edycji
 - poziomy scroll przy szerokim zestawie pól
 
 Aktualny zestaw kolumn:
@@ -220,7 +221,7 @@ Pozwala zmienić tylko te pola:
 - `status_ogloszenia`
 - `notatki`
 
-GUI na stronie głównej używa tego endpointu do inline edycji tych samych pól w tabeli ofert.
+GUI na stronie głównej używa tego endpointu do automatycznej inline edycji pól `priorytet`, `status_aplikacji` i `status_ogloszenia` w tabeli ofert.
 
 ### `POST /imports/refresh`
 
