@@ -106,14 +106,6 @@ npm run worker
 http://localhost:3000
 ```
 
-Do codziennego developmentu możesz użyć też:
-
-```bash
-npm run dev
-```
-
-Ten skrypt używa globalnie zainstalowanego `portless`, więc omija konflikt na porcie `3000` i wystawia aplikację pod lokalnym adresem HTTPS. Przy pierwszym uruchomieniu `portless` może poprosić o zaufanie lokalnemu certyfikatowi.
-
 Uwaga: aktualnie najważniejszy flow importu działa synchronicznie w `POST /imports/refresh` po stronie aplikacji web. Worker istnieje jako osobny element architektury i ma własne testy, ale nie przejmuje jeszcze realnego refreshu z endpointu.
 
 ## Docker
