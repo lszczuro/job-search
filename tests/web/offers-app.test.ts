@@ -44,6 +44,7 @@ describe("offers app", () => {
   afterEach(() => {
     cleanup();
     document.body.innerHTML = "";
+    vi.unstubAllGlobals();
     vi.resetModules();
   });
 
@@ -118,5 +119,55 @@ describe("offers app", () => {
 
     expect(screen.queryByRole("columnheader", { name: "Firma" })).toBeNull();
     expect(screen.queryByText("Acme")).toBeNull();
+  });
+
+  it("saves inline edits for an offer row and updates the visible value", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ ok: true })
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    document.body.innerHTML = `
+      <div id="offers-app"></div>
+      <script id="initial-offers" type="application/json">${JSON.stringify(offers)}</script>
+    `;
+
+    await import("../../src/web/client/offers-app");
+
+    fireEvent.change(await screen.findByLabelText("Status aplikacji dla AI Engineer"), {
+      target: { value: "CV wysłane" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Zapisz zmiany dla AI Engineer" }));
+
+    expect(fetchMock).toHaveBeenCalledWith("/offers/1", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ status_aplikacji: "CV wysłane" })
+    });
+    expect(await screen.findByText("Zapisano")).toBeTruthy();
+    expect(screen.getByDisplayValue("CV wysłane")).toBeTruthy();
+  });
+
+  it("shows an inline error when saving edited fields fails", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      json: async () => ({ ok: false })
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    document.body.innerHTML = `
+      <div id="offers-app"></div>
+      <script id="initial-offers" type="application/json">${JSON.stringify(offers)}</script>
+    `;
+
+    await import("../../src/web/client/offers-app");
+
+    fireEvent.change(await screen.findByLabelText("Status aplikacji dla AI Engineer"), {
+      target: { value: "CV wysłane" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Zapisz zmiany dla AI Engineer" }));
+
+    expect(await screen.findByText("Nie udało się zapisać zmian.")).toBeTruthy();
   });
 });

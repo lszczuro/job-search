@@ -1,0 +1,21 @@
+- task_id: inline-offer-editing
+  goal: Add inline editing for offer application status and notes in the offers UI.
+  depends_on: []
+  stack: typescript
+  owner_role: implementer
+  target_paths:
+    - src/web/client/offers-app.tsx
+    - src/web/routes/offers-routes.ts
+    - src/app/runtime.ts
+    - tests/web/offers-app.test.ts
+    - tests/web/offers-routes.test.ts
+    - README.md
+  definition_of_done: User can edit selected offer fields inline from the offers view, save via PATCH /offers/:id, see visible save feedback, and changes persist after reload.
+  status: completed
+  artifacts:
+    spec: docs/superpowers/specs/2026-04-09-inline-offer-editing-design.md
+    plan: docs/superpowers/plans/2026-04-09-inline-offer-editing.md
+    test_report: tasks/test-report-inline-offer-editing.md
+    review_notes: tasks/review-inline-offer-editing.md
+    security_report: tasks/security-inline-offer-editing.md
+    event_log: logs/events.jsonl

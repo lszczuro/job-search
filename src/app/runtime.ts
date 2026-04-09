@@ -88,15 +88,19 @@ export function createRuntimeDeps(env = process.env) {
       const entries = Object.entries(payload).filter(([key]) => allowedFields.includes(key));
 
       if (entries.length === 0) {
-        return { ok: false };
+        return { ok: false, error: "NO_EDITABLE_FIELDS" };
       }
 
       const setSql = entries.map(([key]) => `${key} = ?`).join(", ");
       const params = entries.map(([, value]) => value);
 
-      sqlite
+      const result = sqlite
         .prepare(`UPDATE job_offers SET ${setSql}, updated_at = ? WHERE id = ?`)
         .run(...params, new Date().toISOString(), id);
+
+      if (result.changes === 0) {
+        return { ok: false, error: "OFFER_NOT_FOUND" };
+      }
 
       return { ok: true };
     },
