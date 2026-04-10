@@ -26,6 +26,13 @@ type JobResult = {
   errors: number;
 };
 
+type CreateRefreshJobOptions = {
+  now?: string;
+};
+
+const RUNNING_REFRESH_JOB_TIMEOUT_MS = 30 * 60 * 1_000;
+const INTERRUPTED_REFRESH_ERROR = "Worker interrupted before refresh job completed";
+
 function mapRow(row: Record<string, unknown>): ImportJobRecord {
   return {
     id: Number(row.id),
@@ -45,6 +52,36 @@ function mapRow(row: Record<string, unknown>): ImportJobRecord {
 }
 
 export function createImportJobsRepository(sqlite: Database.Database) {
+  function getNow(options?: CreateRefreshJobOptions) {
+    return options?.now ?? new Date().toISOString();
+  }
+
+  function isStaleRunningRefreshJob(job: ImportJobRecord, now: string) {
+    if (job.status !== "running") {
+      return false;
+    }
+
+    if (!job.startedAt) {
+      return true;
+    }
+
+    return Date.parse(job.startedAt) <= Date.parse(now) - RUNNING_REFRESH_JOB_TIMEOUT_MS;
+  }
+
+  function markRefreshJobInterrupted(id: number, now: string) {
+    sqlite
+      .prepare(
+        `
+          UPDATE import_jobs
+          SET status = 'failed',
+              error_message = ?,
+              finished_at = ?
+          WHERE id = ?
+        `
+      )
+      .run(INTERRUPTED_REFRESH_ERROR, now, id);
+  }
+
   return {
     async findActiveRefreshJob() {
       const row = sqlite
@@ -62,14 +99,19 @@ export function createImportJobsRepository(sqlite: Database.Database) {
 
       return row ? mapRow(row) : null;
     },
-    async createOrReuseRefreshJob(kind: RefreshJobKind, requestedBy: string) {
+    async createOrReuseRefreshJob(kind: RefreshJobKind, requestedBy: string, options?: CreateRefreshJobOptions) {
       const existing = await this.findActiveRefreshJob();
+      const now = getNow(options);
 
       if (existing) {
-        return { ...existing, reused: true };
+        if (isStaleRunningRefreshJob(existing, now)) {
+          markRefreshJobInterrupted(existing.id, now);
+        } else {
+          return { ...existing, reused: true };
+        }
       }
 
-      const createdAt = new Date().toISOString();
+      const createdAt = now;
       const inserted = sqlite
         .prepare(
           `
