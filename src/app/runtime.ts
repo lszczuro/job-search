@@ -7,6 +7,38 @@ import { runImport } from "../core/importing/run-import";
 import { createImportJobsRepository } from "../db/repositories/import-jobs-repository";
 import type { OfferListItem } from "../web/offer-view-model";
 
+function getNftyMessage(added: number) {
+  return added === 1 ? "Znaleziono 1 nową ofertę" : `Znaleziono ${added} nowe oferty`;
+}
+
+async function publishNftyNotification(
+  config: {
+    endpoint: string | null;
+    login: string | null;
+    password: string | null;
+    clickUrl: string | null;
+  },
+  added: number
+) {
+  if (!config.endpoint || !config.login || !config.password || added <= 0) {
+    return;
+  }
+
+  const headers: Record<string, string> = {
+    Authorization: `Basic ${Buffer.from(`${config.login}:${config.password}`).toString("base64")}`
+  };
+
+  if (config.clickUrl) {
+    headers.Click = config.clickUrl;
+  }
+
+  await fetch(config.endpoint, {
+    method: "POST",
+    body: getNftyMessage(added),
+    headers
+  });
+}
+
 function ensureSchema(sqlite: Database.Database) {
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS job_offers (
@@ -60,6 +92,9 @@ export function createRuntimeDeps(env = process.env) {
   return {
     refreshCron: config.refreshCron,
     timezone: config.timezone,
+    async publishNftyNotification(added: number) {
+      await publishNftyNotification(config.nfty, added);
+    },
     async listOffers() {
       return sqlite
         .prepare(

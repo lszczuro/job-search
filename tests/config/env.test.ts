@@ -23,4 +23,20 @@ describe("parseEnv", () => {
     expect(config.refreshCron).toBe("*/30 * * * *");
     expect(config.timezone).toBe("Europe/Warsaw");
   });
+
+  it("parses optional nfty configuration", () => {
+    const config = parseEnv({
+      NFTY_ENDPOINT: "https://nfty.sh/job-search",
+      NFTY_LOGIN: "alice",
+      NFTY_PASSWORD: "secret",
+      NFTY_CLICK_URL: "https://job-search.local/offers"
+    });
+
+    expect(config.nfty).toEqual({
+      endpoint: "https://nfty.sh/job-search",
+      login: "alice",
+      password: "secret",
+      clickUrl: "https://job-search.local/offers"
+    });
+  });
 });
