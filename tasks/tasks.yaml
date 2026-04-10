@@ -56,3 +56,18 @@
     review_notes: tasks/review-ci-build-and-ghcr-publish.md
     security_report: tasks/security-ci-build-and-ghcr-publish.md
     event_log: logs/events.jsonl
+- task_id: cron-refresh-recovery
+  goal: Restore automatic article refresh when a previous worker run leaves an orphaned running refresh job that blocks new cron-triggered jobs.
+  depends_on: []
+  stack: typescript
+  owner_role: implementer
+  target_paths:
+    - src/db/repositories/import-jobs-repository.ts
+    - tests/db/import-jobs-repository.test.ts
+  definition_of_done: Cron-triggered refresh can enqueue a new job again after an orphaned running refresh exceeds the timeout window, and the regression is covered by automated tests.
+  status: completed
+  artifacts:
+    test_report: tasks/test-report-cron-refresh-recovery.md
+    review_notes: tasks/review-cron-refresh-recovery.md
+    security_report: tasks/security-cron-refresh-recovery.md
+    event_log: logs/events.jsonl
