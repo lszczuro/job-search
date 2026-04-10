@@ -7,6 +7,12 @@ export type AppConfig = {
   allowedCities: string[];
   databasePath: string;
   importPhrase: string;
+  nfty: {
+    endpoint: string | null;
+    login: string | null;
+    password: string | null;
+    clickUrl: string | null;
+  };
 };
 
 export function parseEnv(env: Record<string, string | undefined>): AppConfig {
@@ -27,6 +33,12 @@ export function parseEnv(env: Record<string, string | undefined>): AppConfig {
       .map((value) => value.trim())
       .filter(Boolean),
     databasePath: env.DATABASE_PATH ?? "./data/job-search.db",
-    importPhrase: env.IMPORT_PHRASE ?? env.PROFILE_KEYWORDS ?? "ai llm"
+    importPhrase: env.IMPORT_PHRASE ?? env.PROFILE_KEYWORDS ?? "ai llm",
+    nfty: {
+      endpoint: env.NFTY_ENDPOINT ?? null,
+      login: env.NFTY_LOGIN ?? null,
+      password: env.NFTY_PASSWORD ?? null,
+      clickUrl: env.NFTY_CLICK_URL ?? null
+    }
   };
 }

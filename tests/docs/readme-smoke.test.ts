@@ -14,4 +14,14 @@ describe("README", () => {
     expect(readme).toContain("latest");
     expect(readme).toContain("vX.Y.Z");
   });
+
+  it("documents nfty notifications and their env variables", () => {
+    const readme = readFileSync("README.md", "utf8");
+
+    expect(readme).toContain("NFTY_ENDPOINT");
+    expect(readme).toContain("NFTY_LOGIN");
+    expect(readme).toContain("NFTY_PASSWORD");
+    expect(readme).toContain("NFTY_CLICK_URL");
+    expect(readme).toContain("jedną notyfikację nfty");
+  });
 });

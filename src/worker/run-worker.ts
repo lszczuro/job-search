@@ -17,6 +17,7 @@ type ExecuteNextJobArgs = {
   } | null>;
   markRunning: (id: number) => Promise<void>;
   runRefreshJob: (jobId: number) => Promise<JobResult>;
+  publishNotification: (added: number) => Promise<void>;
   markSucceeded: (id: number, result: JobResult) => Promise<void>;
   markFailed: (id: number, errorMessage: string) => Promise<void>;
 };
@@ -38,6 +39,15 @@ export async function executeNextJob(args: ExecuteNextJobArgs) {
 
   try {
     const result = await args.runRefreshJob(job.id);
+
+    if (result.added > 0) {
+      try {
+        await args.publishNotification(result.added);
+      } catch (error) {
+        console.error("Failed to publish nfty notification", error);
+      }
+    }
+
     await args.markSucceeded(job.id, result);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Unknown import error";
@@ -81,6 +91,7 @@ if (process.env.NODE_ENV !== "test") {
       fetchPendingJob: runtime.fetchPendingJob,
       markRunning: runtime.markJobRunning,
       runRefreshJob: runtime.runRefreshJob,
+      publishNotification: runtime.publishNftyNotification,
       markSucceeded: runtime.markJobSucceeded,
       markFailed: runtime.markJobFailed
     });

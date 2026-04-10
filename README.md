@@ -59,6 +59,10 @@ DATABASE_PATH=./data/job-search.db
 REFRESH_CRON=*/30 * * * *
 APP_TIMEZONE=Europe/Warsaw
 IMPORT_PHRASE=ai
+NFTY_ENDPOINT=
+NFTY_LOGIN=
+NFTY_PASSWORD=
+NFTY_CLICK_URL=
 KNOWN_STACK=nodejs,typescript,openai
 PROFILE_KEYWORDS=ai engineer,llm engineer
 ALLOWED_CITIES=Gliwice,Katowice,Chorzow,Ruda Slaska,Zabrze,Sosnowiec,Bytom,Siemianowice Slaskie
@@ -71,6 +75,10 @@ Znaczenie zmiennych:
 - `REFRESH_CRON`: cron dla schedulera workera; domyślnie co 30 minut
 - `APP_TIMEZONE`: timezone używany przez scheduler i formatowanie dat w GUI
 - `IMPORT_PHRASE`: fraza wysyłana do MCP `search_jobs`
+- `NFTY_ENDPOINT`: opcjonalny endpoint nfty używany przez worker po udanym refreshu z nowymi ofertami
+- `NFTY_LOGIN`: login do Basic Auth dla nfty
+- `NFTY_PASSWORD`: hasło do Basic Auth dla nfty
+- `NFTY_CLICK_URL`: opcjonalny URL otwierany po kliknięciu notyfikacji
 - `KNOWN_STACK`: technologie wpływające na priorytet i notatki
 - `PROFILE_KEYWORDS`: słowa kluczowe do lokalnego odrzucania ofert
 - `ALLOWED_CITIES`: miasta akceptowane dla `Hybrid` i `Office`
@@ -178,6 +186,8 @@ Flow wygląda tak:
 Scheduler działa w procesie `worker` według `REFRESH_CRON`, domyślnie co 30 minut. Jeśli refresh jest już `pending` albo `running`, worker nie tworzy duplikatu.
 
 Po imporcie odśwież stronę główną. GUI pokazuje przycisk ręcznego refreshu i datę ostatniego udanego update w `APP_TIMEZONE`.
+
+Jeżeli worker zakończy refresh z `stats_added > 0` i konfiguracja nfty jest kompletna, wyśle jedną notyfikację nfty dla całego runu. Po kliknięciu notyfikacja może przenieść pod `NFTY_CLICK_URL`. Błąd wysyłki notyfikacji nie oznacza błędu importu.
 
 ## Interfejs webowy
 
