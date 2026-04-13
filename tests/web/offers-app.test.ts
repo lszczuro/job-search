@@ -61,6 +61,38 @@ const offersWithThreeStatuses = [
   }
 ];
 
+describe("column order helpers", () => {
+  it("reconciles saved ids and appends missing current ids", async () => {
+    const { reconcileColumnOrder } = await import("../../src/web/client/column-order");
+
+    expect(reconcileColumnOrder(["firma", "priorytet"], ["stanowisko", "firma", "priorytet"])).toEqual([
+      "firma",
+      "priorytet",
+      "stanowisko"
+    ]);
+  });
+
+  it("drops unknown ids while reconciling saved column order", async () => {
+    const { reconcileColumnOrder } = await import("../../src/web/client/column-order");
+
+    expect(reconcileColumnOrder(["unknown", "firma"], ["stanowisko", "firma", "priorytet"])).toEqual([
+      "firma",
+      "stanowisko",
+      "priorytet"
+    ]);
+  });
+
+  it("moves a source column before a target column", async () => {
+    const { moveColumnOrder } = await import("../../src/web/client/column-order");
+
+    expect(moveColumnOrder(["stanowisko", "firma", "priorytet"], "priorytet", "firma")).toEqual([
+      "stanowisko",
+      "priorytet",
+      "firma"
+    ]);
+  });
+});
+
 describe("offers app", () => {
   afterEach(() => {
     cleanup();
