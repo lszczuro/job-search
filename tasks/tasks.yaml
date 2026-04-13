@@ -71,3 +71,22 @@
     review_notes: tasks/review-cron-refresh-recovery.md
     security_report: tasks/security-cron-refresh-recovery.md
     event_log: logs/events.jsonl
+- task_id: manual-offer-entry
+  goal: Allow adding a single job offer manually from the offers GUI and show it in the table immediately without a reload.
+  depends_on: []
+  stack: typescript
+  owner_role: implementer
+  target_paths:
+    - src/web/client/offers-app.tsx
+    - src/web/routes/offers-routes.ts
+    - README.md
+    - tests/web/offers-app.test.ts
+  definition_of_done: User can open a manual-entry modal from the offers page, submit stanowisko/firma/url to POST /offers, see inline validation or conflict errors, and get the new row in the table immediately after success.
+  status: completed
+  artifacts:
+    spec: docs/superpowers/specs/2026-04-13-manual-offer-entry-design.md
+    plan: docs/superpowers/plans/2026-04-13-manual-offer-entry.md
+    test_report: tasks/test-report-manual-offer-entry.md
+    review_notes: tasks/review-manual-offer-entry.md
+    security_report: tasks/security-manual-offer-entry.md
+    event_log: logs/events.jsonl

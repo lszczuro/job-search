@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen, within } from "@testing-library/react";
 
 const offers = [
   {
@@ -285,5 +285,104 @@ describe("offers app", () => {
     fireEvent.click(screen.getByRole("button", { name: "Odśwież oferty" }));
 
     expect(fetchMock).toHaveBeenCalledWith("/imports/refresh", { method: "POST" });
+  });
+
+  it("opens and closes the manual offer entry modal from the toolbar", async () => {
+    document.body.innerHTML = `
+      <div id="offers-app"></div>
+      <script id="initial-offers" type="application/json">${JSON.stringify(offers)}</script>
+    `;
+
+    await import("../../src/web/client/offers-app");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Dodaj ręcznie" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Dodaj ofertę ręcznie" });
+
+    expect(dialog).toBeTruthy();
+    expect(within(dialog).getByLabelText("Stanowisko")).toBeTruthy();
+    expect(within(dialog).getByLabelText("Firma")).toBeTruthy();
+    expect(within(dialog).getByLabelText("URL")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Anuluj" }));
+
+    expect(screen.queryByRole("dialog", { name: "Dodaj ofertę ręcznie" })).toBeNull();
+  });
+
+  it("submits a manual offer and appends it to the table without reloading", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: 3,
+        stanowisko: "Staff Engineer",
+        firma: "Delta",
+        url: "https://example.com/manual",
+        status_aplikacji: "📋 Zapisana",
+        priorytet: "🔥 Teraz",
+        status_ogloszenia: "🟢 Aktywne",
+        lokalizacja: "Brak danych",
+        tryb_pracy: "Nieznany",
+        kontrakt: "Nieznany",
+        notatki: "",
+        source: "manual",
+        source_external_id: null
+      })
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    document.body.innerHTML = `
+      <div id="offers-app"></div>
+      <script id="initial-offers" type="application/json">${JSON.stringify(offers)}</script>
+    `;
+
+    await import("../../src/web/client/offers-app");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Dodaj ręcznie" }));
+    const dialog = screen.getByRole("dialog", { name: "Dodaj ofertę ręcznie" });
+    fireEvent.change(within(dialog).getByLabelText("Stanowisko"), { target: { value: "Staff Engineer" } });
+    fireEvent.change(within(dialog).getByLabelText("Firma"), { target: { value: "Delta" } });
+    fireEvent.change(within(dialog).getByLabelText("URL"), { target: { value: "https://example.com/manual" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Dodaj rekord" }));
+
+    expect(fetchMock).toHaveBeenCalledWith("/offers", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        stanowisko: "Staff Engineer",
+        firma: "Delta",
+        url: "https://example.com/manual"
+      })
+    });
+    expect(await screen.findByText("Staff Engineer")).toBeTruthy();
+    expect(screen.getByText("3 / 3 ofert")).toBeTruthy();
+    expect(screen.queryByRole("dialog", { name: "Dodaj ofertę ręcznie" })).toBeNull();
+  });
+
+  it("shows an inline error and preserves values when manual create fails", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      json: async () => ({ ok: false, error: "DUPLICATE_URL" })
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    document.body.innerHTML = `
+      <div id="offers-app"></div>
+      <script id="initial-offers" type="application/json">${JSON.stringify(offers)}</script>
+    `;
+
+    await import("../../src/web/client/offers-app");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Dodaj ręcznie" }));
+    const dialog = screen.getByRole("dialog", { name: "Dodaj ofertę ręcznie" });
+    fireEvent.change(within(dialog).getByLabelText("Stanowisko"), { target: { value: "Staff Engineer" } });
+    fireEvent.change(within(dialog).getByLabelText("Firma"), { target: { value: "Delta" } });
+    fireEvent.change(within(dialog).getByLabelText("URL"), { target: { value: "https://example.com/manual" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Dodaj rekord" }));
+
+    expect(await screen.findByText("Oferta z tym URL już istnieje.")).toBeTruthy();
+    expect(screen.getByDisplayValue("Staff Engineer")).toBeTruthy();
+    expect(screen.getByDisplayValue("Delta")).toBeTruthy();
+    expect(screen.getByDisplayValue("https://example.com/manual")).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: "Dodaj ofertę ręcznie" })).toBeTruthy();
   });
 });

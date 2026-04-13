@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { createRoot } from "react-dom/client";
 import {
   flexRender,
@@ -31,6 +31,35 @@ type SaveState =
   | { status: "saving"; message: string }
   | { status: "success"; message: string }
   | { status: "error"; message: string };
+
+type CreateOfferFormState = {
+  stanowisko: string;
+  firma: string;
+  url: string;
+};
+
+type CreateOfferState =
+  | { status: "idle"; message: string | null }
+  | { status: "saving"; message: string | null }
+  | { status: "error"; message: string };
+
+type CreateOfferResponse = {
+  id: number;
+  stanowisko: string;
+  firma: string;
+  url: string;
+  status_aplikacji?: string;
+  priorytet?: string;
+  status_ogloszenia?: string;
+  lokalizacja?: string;
+  tryb_pracy?: string;
+  kontrakt?: string;
+  notatki?: string;
+  data_dodania?: string;
+  ostatnia_weryfikacja?: string | null;
+  widełki_od?: number | null;
+  widełki_do?: number | null;
+};
 
 const STATUS_APLIKACJI_OPTIONS = [
   "📋 Zapisana",
@@ -94,6 +123,46 @@ function normalizeDate(value?: string | null) {
 
 function buildUniqueOptions(values: Array<string | null | undefined>) {
   return [...new Set(values.filter((v): v is string => Boolean(v)))].sort((a, b) => a.localeCompare(b));
+}
+
+function getInitialCreateForm(): CreateOfferFormState {
+  return {
+    stanowisko: "",
+    firma: "",
+    url: ""
+  };
+}
+
+function getCreateErrorMessage(errorCode?: string) {
+  if (errorCode === "DUPLICATE_URL") {
+    return "Oferta z tym URL już istnieje.";
+  }
+
+  if (errorCode === "INVALID_PAYLOAD") {
+    return "Uzupełnij stanowisko, firmę i poprawny URL.";
+  }
+
+  return "Nie udało się dodać oferty.";
+}
+
+function mapCreatedOfferToListItem(offer: CreateOfferResponse): OfferListItem {
+  return {
+    id: offer.id,
+    stanowisko: offer.stanowisko,
+    firma: offer.firma,
+    url: offer.url,
+    statusAplikacji: offer.status_aplikacji ?? "📋 Zapisana",
+    priorytet: offer.priorytet ?? "🔥 Teraz",
+    statusOgloszenia: offer.status_ogloszenia ?? "🟢 Aktywne",
+    lokalizacja: offer.lokalizacja ?? "Brak danych",
+    trybPracy: offer.tryb_pracy ?? "Nieznany",
+    kontrakt: offer.kontrakt ?? "Nieznany",
+    notatki: offer.notatki ?? "",
+    dataDodania: offer.data_dodania ?? new Date().toISOString().slice(0, 10),
+    ostatniaWeryfikacja: offer.ostatnia_weryfikacja ?? null,
+    widełkiOd: offer.widełki_od ?? null,
+    widełkiDo: offer.widełki_do ?? null
+  };
 }
 
 function getColumnLabel(column: Column<OfferListItem>) {
@@ -247,6 +316,9 @@ function OfferTableApp() {
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
   const [saveStates, setSaveStates] = useState<Partial<Record<number, Partial<Record<EditableField, SaveState>>>>>({});
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [createForm, setCreateForm] = useState<CreateOfferFormState>(() => getInitialCreateForm());
+  const [createState, setCreateState] = useState<CreateOfferState>({ status: "idle", message: null });
 
   const statusAplikacjiOptions = mergeOptions(STATUS_APLIKACJI_OPTIONS, offers, "statusAplikacji");
   const priorytetOptions = mergeOptions(PRIORYTET_OPTIONS, offers, "priorytet");
@@ -530,6 +602,58 @@ function OfferTableApp() {
     });
   }
 
+  function openCreateModal() {
+    setCreateForm(getInitialCreateForm());
+    setCreateState({ status: "idle", message: null });
+    setIsCreateModalOpen(true);
+  }
+
+  function closeCreateModal() {
+    if (createState.status === "saving") return;
+    setIsCreateModalOpen(false);
+    setCreateState({ status: "idle", message: null });
+  }
+
+  async function handleCreateSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const payload = {
+      stanowisko: createForm.stanowisko.trim(),
+      firma: createForm.firma.trim(),
+      url: createForm.url.trim()
+    };
+
+    if (!payload.stanowisko || !payload.firma || !payload.url) {
+      setCreateState({ status: "error", message: getCreateErrorMessage("INVALID_PAYLOAD") });
+      return;
+    }
+
+    setCreateState({ status: "saving", message: null });
+
+    try {
+      const response = await fetch("/offers", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const result = (await response.json().catch(() => null)) as
+        | ({ ok?: boolean; error?: string } & Partial<CreateOfferResponse>)
+        | null;
+
+      if (!response.ok || !result || typeof result.id !== "number") {
+        setCreateState({ status: "error", message: getCreateErrorMessage(result?.error) });
+        return;
+      }
+
+      setOffers((current) => [mapCreatedOfferToListItem(result as CreateOfferResponse), ...current]);
+      setIsCreateModalOpen(false);
+      setCreateForm(getInitialCreateForm());
+      setCreateState({ status: "idle", message: null });
+    } catch {
+      setCreateState({ status: "error", message: getCreateErrorMessage() });
+    }
+  }
+
   const activeFilterChips = columnFilters.flatMap((cf) => {
     const col = table.getColumn(cf.id);
     const headerLabel = col ? getColumnLabel(col) : cf.id;
@@ -557,9 +681,14 @@ function OfferTableApp() {
           </p>
         </div>
         <div>
-          <button className="refresh-button" onClick={() => void handleRefreshClick()} type="button">
-            Odśwież oferty
-          </button>
+          <div className="header-actions">
+            <button className="refresh-button" onClick={openCreateModal} type="button">
+              Dodaj ręcznie
+            </button>
+            <button className="refresh-button" onClick={() => void handleRefreshClick()} type="button">
+              Odśwież oferty
+            </button>
+          </div>
         </div>
       </div>
 
@@ -651,6 +780,67 @@ function OfferTableApp() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {isCreateModalOpen && (
+        <div aria-modal="true" className="modal-backdrop" role="dialog" aria-label="Dodaj ofertę ręcznie">
+          <div className="modal-card">
+            <h2>Dodaj ofertę ręcznie</h2>
+            <form className="manual-form" onSubmit={(event) => void handleCreateSubmit(event)}>
+              <label>
+                <span>Stanowisko</span>
+                <input
+                  className="edit-input"
+                  disabled={createState.status === "saving"}
+                  name="stanowisko"
+                  onChange={(event) =>
+                    setCreateForm((current) => ({ ...current, stanowisko: event.target.value }))
+                  }
+                  value={createForm.stanowisko}
+                />
+              </label>
+              <label>
+                <span>Firma</span>
+                <input
+                  className="edit-input"
+                  disabled={createState.status === "saving"}
+                  name="firma"
+                  onChange={(event) => setCreateForm((current) => ({ ...current, firma: event.target.value }))}
+                  value={createForm.firma}
+                />
+              </label>
+              <label>
+                <span>URL</span>
+                <input
+                  className="edit-input"
+                  disabled={createState.status === "saving"}
+                  name="url"
+                  onChange={(event) => setCreateForm((current) => ({ ...current, url: event.target.value }))}
+                  type="url"
+                  value={createForm.url}
+                />
+              </label>
+              {createState.status === "error" && (
+                <p aria-live="polite" className="save-feedback save-feedback-error">
+                  {createState.message}
+                </p>
+              )}
+              <div className="modal-actions">
+                <button
+                  className="secondary-button"
+                  disabled={createState.status === "saving"}
+                  onClick={closeCreateModal}
+                  type="button"
+                >
+                  Anuluj
+                </button>
+                <button className="save-button" disabled={createState.status === "saving"} type="submit">
+                  {createState.status === "saving" ? "Zapisywanie..." : "Dodaj rekord"}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>

@@ -12,6 +12,7 @@ Lokalny tracker ofert pracy AI/LLM z importem z publicznego MCP CzyJestEldorado,
 - filtry per-kolumna: tekstowe, datowe, wielokrotnego wyboru, zakresowe numeryczne
 - przełączanie widoczności kolumn
 - inline editing dla `status_aplikacji`, `priorytet` i `status_ogloszenia`
+- ręczne dodawanie pojedynczej oferty z GUI
 - ręczne odświeżenie importu przez HTTP
 - uruchamianie przez Node lokalnie albo przez Docker Compose
 
@@ -195,6 +196,7 @@ Strona główna renderuje shell HTML z Fastify, a sama tabela jest hydradowana p
 
 Tabela wspiera:
 
+- przycisk `Dodaj ręcznie` otwierający modal z formularzem `Stanowisko`, `Firma`, `URL`
 - przycisk `Odśwież oferty`
 - znacznik `Ostatni update`
 - link w kolumnie `Stanowisko`
@@ -211,6 +213,7 @@ Tabela wspiera:
 - ukrywanie i pokazywanie kolumn
 - inline edycję pól `status_aplikacji`, `priorytet` i `status_ogloszenia`
 - automatyczny zapis zmian przez `PATCH /offers/:id` bez przeładowania strony
+- ręczne dodanie nowej oferty przez `POST /offers` bez przeładowania strony; po sukcesie rekord pojawia się od razu w lokalnym stanie tabeli
 - widoczne statusy `Zapisywanie...`, `Zapisano` i komunikat błędu przy nieudanym zapisie
 - `Notatki` renderowane jako same labele do filtrowania, bez pola edycji
 - poziomy scroll przy szerokim zestawie pól
@@ -255,6 +258,18 @@ Pozwala zmienić tylko te pola:
 - `notatki`
 
 GUI na stronie głównej używa tego endpointu do automatycznej inline edycji pól `priorytet`, `status_aplikacji` i `status_ogloszenia` w tabeli ofert.
+
+### `POST /offers`
+
+Tworzy ręcznie dodaną ofertę na podstawie trzech pól:
+
+- `stanowisko`
+- `firma`
+- `url`
+
+Backend waliduje kompletność payloadu i format URL, zapisuje rekord do `job_offers`, ustawia domyślne wartości dla pozostałych wymaganych pól i pilnuje unikalności `url`.
+
+GUI używa tego endpointu z modala `Dodaj ręcznie`; po sukcesie zamyka modal i dopina nowy wiersz do tabeli bez pełnego reloadu.
 
 ### `POST /imports/refresh`
 
