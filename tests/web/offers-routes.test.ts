@@ -115,24 +115,33 @@ describe("offer routes", () => {
   });
 
   it("rejects duplicate url submissions", async () => {
+    const createdUrls = new Set<string>();
     const app = buildServer({
       listOffers: async () => [],
       updateOffer: async () => ({ ok: true }),
       createOrReuseRefreshJob: async () => ({ ok: true }),
       getLatestSuccessfulRefresh: async () => null,
-      createOffer: async (payload: { stanowisko: string; firma: string; url: string }) => ({
-        ...createOfferResponse,
-        ...payload,
-        status_aplikacji: "📋 Zapisana",
-        priorytet: "🔥 Teraz",
-        status_ogloszenia: "🟢 Aktywne",
-        lokalizacja: "Brak danych",
-        tryb_pracy: "Nieznany",
-        kontrakt: "Nieznany",
-        notatki: "",
-        source: "manual",
-        source_external_id: null
-      })
+      createOffer: async (payload: { stanowisko: string; firma: string; url: string }) => {
+        if (createdUrls.has(payload.url)) {
+          return { ok: false, error: "DUPLICATE_URL" };
+        }
+
+        createdUrls.add(payload.url);
+
+        return {
+          ...createOfferResponse,
+          ...payload,
+          status_aplikacji: "📋 Zapisana",
+          priorytet: "🔥 Teraz",
+          status_ogloszenia: "🟢 Aktywne",
+          lokalizacja: "Brak danych",
+          tryb_pracy: "Nieznany",
+          kontrakt: "Nieznany",
+          notatki: "",
+          source: "manual",
+          source_external_id: null
+        };
+      }
     } as any);
 
     await app.inject({
