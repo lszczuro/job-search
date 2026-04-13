@@ -4,6 +4,7 @@ import { serializeOffersForHtml, type OfferListItem } from "../offer-view-model"
 type OfferDeps = {
   listOffers?: () => Promise<OfferListItem[]>;
   updateOffer?: (id: number, payload: Record<string, string>) => Promise<unknown>;
+  createOffer?: (payload: { stanowisko: string; firma: string; url: string }) => Promise<unknown>;
   getLatestSuccessfulRefresh?: () => Promise<string | null>;
   timezone?: string;
 };
@@ -11,6 +12,11 @@ type OfferDeps = {
 type RefreshMeta = {
   timezone: string;
   lastUpdatedAt: string | null;
+};
+
+type CreateOfferError = {
+  ok: false;
+  error: "INVALID_PAYLOAD" | "DUPLICATE_URL";
 };
 
 export function renderOffersList(offers: OfferListItem[], refreshMeta: RefreshMeta) {
@@ -95,6 +101,38 @@ export function registerOfferRoutes(app: FastifyInstance, deps: OfferDeps) {
   });
 
   app.get("/offers", async () => deps.listOffers?.() ?? []);
+
+  app.post<{ Body: { stanowisko?: string; firma?: string; url?: string } }>("/offers", async (request, reply) => {
+    const payload = {
+      stanowisko: request.body?.stanowisko?.trim() ?? "",
+      firma: request.body?.firma?.trim() ?? "",
+      url: request.body?.url?.trim() ?? ""
+    };
+
+    if (!payload.stanowisko || !payload.firma || !payload.url) {
+      return reply.status(400).send({ ok: false, error: "INVALID_PAYLOAD" });
+    }
+
+    try {
+      new URL(payload.url);
+    } catch {
+      return reply.status(400).send({ ok: false, error: "INVALID_PAYLOAD" });
+    }
+
+    const result = await deps.createOffer?.(payload);
+
+    if (result && typeof result === "object" && "ok" in result && result.ok === false) {
+      const errorResult = result as CreateOfferError;
+
+      if (errorResult.error === "DUPLICATE_URL") {
+        return reply.status(409).send(errorResult);
+      }
+
+      return reply.status(400).send(errorResult);
+    }
+
+    return reply.status(201).send(result ?? { ok: false, error: "INVALID_PAYLOAD" });
+  });
 
   app.patch<{ Params: { id: string }; Body: Record<string, string> }>(
     "/offers/:id",

@@ -7,6 +7,30 @@ import { runImport } from "../core/importing/run-import";
 import { createImportJobsRepository } from "../db/repositories/import-jobs-repository";
 import type { OfferListItem } from "../web/offer-view-model";
 
+type CreateOfferPayload = {
+  stanowisko: string;
+  firma: string;
+  url: string;
+};
+
+type CreateOfferResult =
+  | {
+      id: number;
+      stanowisko: string;
+      firma: string;
+      url: string;
+      status_aplikacji: string;
+      priorytet: string;
+      status_ogloszenia: string;
+      lokalizacja: string;
+      tryb_pracy: string;
+      kontrakt: string;
+      notatki: string;
+      source: string;
+      source_external_id: null;
+    }
+  | { ok: false; error: "INVALID_PAYLOAD" | "DUPLICATE_URL" };
+
 function getNftyMessage(added: number) {
   return added === 1 ? "Znaleziono 1 nową ofertę" : `Znaleziono ${added} nowe oferty`;
 }
@@ -81,6 +105,19 @@ function ensureSchema(sqlite: Database.Database) {
   `);
 }
 
+function isValidCreateOfferPayload(payload: CreateOfferPayload) {
+  if (!payload.stanowisko.trim() || !payload.firma.trim() || !payload.url.trim()) {
+    return false;
+  }
+
+  try {
+    new URL(payload.url);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function createRuntimeDeps(env = process.env) {
   const config = parseEnv(env);
   mkdirSync(dirname(config.databasePath), { recursive: true });
@@ -142,6 +179,70 @@ export function createRuntimeDeps(env = process.env) {
       }
 
       return { ok: true };
+    },
+    async createOffer(payload: CreateOfferPayload): Promise<CreateOfferResult> {
+      if (!isValidCreateOfferPayload(payload)) {
+        return { ok: false, error: "INVALID_PAYLOAD" };
+      }
+
+      const now = new Date().toISOString();
+      const dataDodania = now.slice(0, 10);
+
+      try {
+        const result = sqlite
+          .prepare(
+            `
+              INSERT INTO job_offers (
+                stanowisko, firma, url, widełki_od, widełki_do, lokalizacja, tryb_pracy,
+                kontrakt, status_ogloszenia, status_aplikacji, priorytet, notatki,
+                data_dodania, ostatnia_weryfikacja, source, source_external_id,
+                created_at, updated_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `
+          )
+          .run(
+            payload.stanowisko.trim(),
+            payload.firma.trim(),
+            payload.url.trim(),
+            null,
+            null,
+            "Brak danych",
+            "Nieznany",
+            "Nieznany",
+            "🟢 Aktywne",
+            "📋 Zapisana",
+            "🔥 Teraz",
+            "",
+            dataDodania,
+            null,
+            "manual",
+            null,
+            now,
+            now
+          );
+
+        return {
+          id: Number(result.lastInsertRowid),
+          stanowisko: payload.stanowisko.trim(),
+          firma: payload.firma.trim(),
+          url: payload.url.trim(),
+          status_aplikacji: "📋 Zapisana",
+          priorytet: "🔥 Teraz",
+          status_ogloszenia: "🟢 Aktywne",
+          lokalizacja: "Brak danych",
+          tryb_pracy: "Nieznany",
+          kontrakt: "Nieznany",
+          notatki: "",
+          source: "manual",
+          source_external_id: null
+        };
+      } catch (error) {
+        if (error && typeof error === "object" && "code" in error && error.code === "SQLITE_CONSTRAINT_UNIQUE") {
+          return { ok: false, error: "DUPLICATE_URL" };
+        }
+
+        throw error;
+      }
     },
     async createOrReuseRefreshJob(kind: "manual_refresh" | "scheduled_refresh") {
       return importJobs.createOrReuseRefreshJob(kind, kind === "manual_refresh" ? "user" : "system");

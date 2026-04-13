@@ -10,6 +10,7 @@ type ServerDeps = {
   timezone?: string;
   listOffers?: () => Promise<OfferListItem[]>;
   updateOffer?: (id: number, payload: Record<string, string>) => Promise<unknown>;
+  createOffer?: (payload: { stanowisko: string; firma: string; url: string }) => Promise<unknown>;
   createOrReuseRefreshJob?: (kind: "manual_refresh" | "scheduled_refresh") => Promise<unknown>;
   getLatestSuccessfulRefresh?: () => Promise<string | null>;
 };
@@ -39,7 +40,7 @@ async function getOffersAppBundle() {
 export function buildServer(deps: ServerDeps = {}) {
   const app = Fastify();
   const runtimeDeps =
-    deps.listOffers && deps.updateOffer && deps.createOrReuseRefreshJob && deps.getLatestSuccessfulRefresh
+    deps.listOffers && deps.updateOffer && deps.createOffer && deps.createOrReuseRefreshJob && deps.getLatestSuccessfulRefresh
       ? null
       : createRuntimeDeps();
   const mergedDeps = { ...runtimeDeps, ...deps };
