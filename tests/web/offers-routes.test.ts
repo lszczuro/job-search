@@ -7,6 +7,12 @@ import { buildServer } from "../../src/web/server";
 
 describe("offer routes", () => {
   const createdDirs: string[] = [];
+  const createOfferResponse = {
+    id: 1,
+    stanowisko: "AI Engineer",
+    firma: "Acme",
+    url: "https://example.com/manual"
+  };
 
   afterEach(() => {
     delete process.env.DATABASE_PATH;
@@ -44,6 +50,142 @@ describe("offer routes", () => {
 
     expect(response.statusCode).toBe(200);
     expect(changes).toEqual([{ id: 7, priorytet: "👀 Obserwuj" }]);
+  });
+
+  it("creates an offer with required fields only", async () => {
+    const createCalls: Array<{
+      stanowisko: string;
+      firma: string;
+      url: string;
+    }> = [];
+    const app = buildServer({
+      listOffers: async () => [],
+      updateOffer: async () => ({ ok: true }),
+      createOrReuseRefreshJob: async () => ({ ok: true }),
+      getLatestSuccessfulRefresh: async () => null,
+      createOffer: async (payload: { stanowisko: string; firma: string; url: string }) => {
+        createCalls.push(payload);
+
+        return {
+          ...createOfferResponse,
+          ...payload,
+          status_aplikacji: "📋 Zapisana",
+          priorytet: "🔥 Teraz",
+          status_ogloszenia: "🟢 Aktywne",
+          lokalizacja: "Brak danych",
+          tryb_pracy: "Nieznany",
+          kontrakt: "Nieznany",
+          notatki: "",
+          source: "manual",
+          source_external_id: null
+        };
+      }
+    } as any);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/offers",
+      payload: {
+        stanowisko: "AI Engineer",
+        firma: "Acme",
+        url: "https://example.com/manual"
+      }
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).toEqual({
+      ...createOfferResponse,
+      status_aplikacji: "📋 Zapisana",
+      priorytet: "🔥 Teraz",
+      status_ogloszenia: "🟢 Aktywne",
+      lokalizacja: "Brak danych",
+      tryb_pracy: "Nieznany",
+      kontrakt: "Nieznany",
+      notatki: "",
+      source: "manual",
+      source_external_id: null
+    });
+    expect(createCalls).toEqual([
+      {
+        stanowisko: "AI Engineer",
+        firma: "Acme",
+        url: "https://example.com/manual"
+      }
+    ]);
+  });
+
+  it("rejects duplicate url submissions", async () => {
+    const app = buildServer({
+      listOffers: async () => [],
+      updateOffer: async () => ({ ok: true }),
+      createOrReuseRefreshJob: async () => ({ ok: true }),
+      getLatestSuccessfulRefresh: async () => null,
+      createOffer: async (payload: { stanowisko: string; firma: string; url: string }) => ({
+        ...createOfferResponse,
+        ...payload,
+        status_aplikacji: "📋 Zapisana",
+        priorytet: "🔥 Teraz",
+        status_ogloszenia: "🟢 Aktywne",
+        lokalizacja: "Brak danych",
+        tryb_pracy: "Nieznany",
+        kontrakt: "Nieznany",
+        notatki: "",
+        source: "manual",
+        source_external_id: null
+      })
+    } as any);
+
+    await app.inject({
+      method: "POST",
+      url: "/offers",
+      payload: {
+        stanowisko: "AI Engineer",
+        firma: "Acme",
+        url: "https://example.com/manual"
+      }
+    });
+    const duplicateResponse = await app.inject({
+      method: "POST",
+      url: "/offers",
+      payload: {
+        stanowisko: "AI Engineer",
+        firma: "Acme",
+        url: "https://example.com/manual"
+      }
+    });
+
+    expect(duplicateResponse.statusCode).toBe(409);
+    expect(duplicateResponse.json()).toEqual({
+      ok: false,
+      error: "DUPLICATE_URL"
+    });
+  });
+
+  it("rejects invalid payloads", async () => {
+    const app = buildServer({
+      listOffers: async () => [],
+      updateOffer: async () => ({ ok: true }),
+      createOrReuseRefreshJob: async () => ({ ok: true }),
+      getLatestSuccessfulRefresh: async () => null,
+      createOffer: async () => {
+        throw new Error("should not be called");
+      }
+    } as any);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/offers",
+      payload: {
+        stanowisko: "AI Engineer",
+        firma: "Acme"
+      }
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({
+      ok: false,
+      error: "INVALID_PAYLOAD"
+    });
   });
 
   it("persists patched fields in sqlite and returns them on the next load", async () => {
